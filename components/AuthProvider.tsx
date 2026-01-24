@@ -8,6 +8,7 @@ interface AuthContextType {
     isAuthenticated: boolean;
     user: any | null;
     logout: () => Promise<void>;
+    login: (password: string) => boolean;
     isLoading: boolean;
 }
 
@@ -55,8 +56,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const login = (password: string) => {
+        if (password === "cairo") {
+            setIsAuthenticated(true);
+            return true;
+        }
+        return false;
+    };
+
     return (
-        <AuthContext.Provider value={{ isAuthenticated, user, logout, isLoading }}>
+        <AuthContext.Provider value={{ isAuthenticated, user, logout, login, isLoading }}>
             {children}
         </AuthContext.Provider>
     );
