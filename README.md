@@ -92,6 +92,23 @@ npm run start
 npm run lint
 ```
 
+## ☁️ AWS Amplify Setup
+
+### 1. 前提条件
+- AWS アカウント
+- AWS CLI が設定済みであること
+
+### 2. ローカル開発環境 (Sandbox)
+ローカルでバックエンドを開発・テストするために、Sandboxを起動します。
+
+```bash
+npx ampx sandbox
+```
+これにより、隔離されたAWS環境がプロビジョニングされ、`amplify_outputs.json` が生成されます。
+
+### 3. デプロイ
+GitHubリポジトリにプッシュし、Amplify ConsoleまたはVercelでリポジトリを接続してデプロイします。
+
 ## 🔐 認証
 
 このアプリケーションは AWS Amplify を使用してユーザー認証を管理しています。`AuthProvider` コンポーネントが認証状態を管理し、未認証ユーザーをログインページにリダイレクトします。
