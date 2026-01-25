@@ -1,10 +1,9 @@
 import { defineBackend } from '@aws-amplify/backend';
+import { auth } from './auth/resource';
 
 /**
  * @see https://docs.amplify.aws/gen2/build-a-backend/
- * 
- * Temporarily removed auth to test minimal build
  */
 const backend = defineBackend({
-    // auth removed for testing
+    auth
 });
