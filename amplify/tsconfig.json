@@ -6,7 +6,11 @@
         "resolveJsonModule": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
-        "strict": true
+        "strict": true,
+        "lib": [
+            "es2022",
+            "dom"
+        ]
     },
     "exclude": [
         "node_modules"
