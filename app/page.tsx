@@ -22,8 +22,8 @@ export default function Dashboard() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
-  // State for file uploads
-  const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: string }>({});
+  // State for file uploads - now supports multiple files per document type
+  const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: string[] }>({});
   const [selectedComponent, setSelectedComponent] = useState(COMPONENTS[0]);
 
   // State for generation
@@ -38,35 +38,72 @@ export default function Dashboard() {
 
   // Load from local storage
   useEffect(() => {
-    const saved = localStorage.getItem("design-concept-files");
+    const saved = localStorage.getItem("design-concept-files-v2");
     if (saved) {
       setUploadedFiles(JSON.parse(saved));
     }
   }, []);
 
+  // Handle adding files (multiple files at once)
   const handleFileUpload = (docName: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const fileName = e.target.files[0].name;
-      const newState = { ...uploadedFiles, [docName]: fileName };
+    if (e.target.files && e.target.files.length > 0) {
+      const newFileNames = Array.from(e.target.files).map(f => f.name);
+      const existingFiles = uploadedFiles[docName] || [];
+      // Avoid duplicate filenames
+      const uniqueNewFiles = newFileNames.filter(name => !existingFiles.includes(name));
+      const updatedFiles = [...existingFiles, ...uniqueNewFiles];
+      const newState = { ...uploadedFiles, [docName]: updatedFiles };
       setUploadedFiles(newState);
-      localStorage.setItem("design-concept-files", JSON.stringify(newState));
+      localStorage.setItem("design-concept-files-v2", JSON.stringify(newState));
       // Clear generated data when files change
       setGeneratedData(null);
     }
+    // Reset input value to allow re-selecting the same file
+    e.target.value = '';
+  };
+
+  // Handle removing a single file from a document type
+  const handleRemoveFile = (docName: string, fileName: string) => {
+    const existingFiles = uploadedFiles[docName] || [];
+    const updatedFiles = existingFiles.filter(f => f !== fileName);
+    let newState;
+    if (updatedFiles.length === 0) {
+      // Remove the key entirely if no files left
+      newState = { ...uploadedFiles };
+      delete newState[docName];
+    } else {
+      newState = { ...uploadedFiles, [docName]: updatedFiles };
+    }
+    setUploadedFiles(newState);
+    localStorage.setItem("design-concept-files-v2", JSON.stringify(newState));
+    setGeneratedData(null);
+  };
+
+  // Handle clearing all files from a document type
+  const handleClearAllFiles = (docName: string) => {
+    const newState = { ...uploadedFiles };
+    delete newState[docName];
+    setUploadedFiles(newState);
+    localStorage.setItem("design-concept-files-v2", JSON.stringify(newState));
+    setGeneratedData(null);
   };
 
   const handleGenerate = () => {
     setIsGenerating(true);
     // Simulate generation delay
     setTimeout(() => {
-      const uploadedDocNames = Object.values(uploadedFiles);
+      // Flatten all uploaded file names
+      const uploadedDocNames = Object.values(uploadedFiles).flat();
       const data = generateMockData(selectedComponent, uploadedDocNames);
       setGeneratedData(data);
       setIsGenerating(false);
     }, 1500);
   };
 
-  const uploadedCount = Object.keys(uploadedFiles).length;
+  // Count document types with at least one file
+  const uploadedCount = Object.keys(uploadedFiles).filter(k => uploadedFiles[k].length > 0).length;
+  // Total file count across all document types
+  const totalFilesCount = Object.values(uploadedFiles).flat().length;
   const totalDocs = INPUT_DOCS.length;
 
   if (isLoading || !isAuthenticated) {
@@ -132,58 +169,81 @@ export default function Dashboard() {
                 設計に必要な資料をアップロードしてください。
               </p>
               <div className="space-y-3">
-                {INPUT_DOCS.map((doc) => (
-                  <div key={doc} className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition hover:border-sky-400 hover:bg-white">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{doc}</p>
-                        {uploadedFiles[doc] ? (
-                          <p className="text-xs text-emerald-600 truncate flex items-center gap-1">
-                            <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                            {uploadedFiles[doc]}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-slate-500">未選択</p>
-                        )}
+                {INPUT_DOCS.map((doc) => {
+                  const files = uploadedFiles[doc] || [];
+                  const hasFiles = files.length > 0;
+                  return (
+                    <div key={doc} className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition hover:border-sky-400 hover:bg-white">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{doc}</p>
+                          {hasFiles ? (
+                            <p className="text-xs text-emerald-600 flex items-center gap-1">
+                              <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                              {files.length}件アップロード済み
+                            </p>
+                          ) : (
+                            <p className="text-xs text-slate-500">未選択</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="cursor-pointer">
+                            <span className={`rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition ${hasFiles ? 'bg-sky-700 hover:bg-sky-600 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'}`}>
+                              {hasFiles ? "追加" : "選択"}
+                            </span>
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => handleFileUpload(doc, e)}
+                              accept=".pptx,.xlsx,.pdf"
+                              multiple
+                            />
+                          </label>
+                          {hasFiles && (
+                            <button
+                              onClick={() => handleClearAllFiles(doc)}
+                              className="text-slate-400 hover:text-red-500 p-1 transition"
+                              title="すべて削除"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <label className="cursor-pointer">
-                          <span className={`rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition ${uploadedFiles[doc] ? 'bg-slate-900 hover:bg-slate-800 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'}`}>
-                            {uploadedFiles[doc] ? "差し替え" : "選択"}
-                          </span>
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(doc, e)}
-                            accept=".pptx,.xlsx,.pdf"
-                          />
-                        </label>
-                        {uploadedFiles[doc] && (
-                          <button
-                            onClick={() => {
-                              const ns = { ...uploadedFiles };
-                              delete ns[doc];
-                              setUploadedFiles(ns);
-                              localStorage.setItem("design-concept-files", JSON.stringify(ns));
-                              setGeneratedData(null);
-                            }}
-                            className="text-slate-400 hover:text-red-500 p-1 transition"
-                            title="削除"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                          </button>
-                        )}
-                      </div>
+                      {/* List of uploaded files */}
+                      {hasFiles && (
+                        <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
+                          {files.map((fileName, idx) => (
+                            <div key={idx} className="flex items-center justify-between gap-2 text-xs text-slate-600 bg-white rounded px-2 py-1">
+                              <span className="truncate flex-1" title={fileName}>{fileName}</span>
+                              <button
+                                onClick={() => handleRemoveFile(doc, fileName)}
+                                className="text-slate-400 hover:text-red-500 transition flex-shrink-0"
+                                title="削除"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Progress indicator */}
               {uploadedCount > 0 && uploadedCount < totalDocs && (
                 <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                   <p className="text-xs text-amber-700">
-                    あと {totalDocs - uploadedCount} 件の資料をアップロードしてください
+                    あと {totalDocs - uploadedCount} 種類の資料をアップロードしてください（合計 {totalFilesCount} ファイル）
+                  </p>
+                </div>
+              )}
+              {uploadedCount === totalDocs && (
+                <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <p className="text-xs text-emerald-700">
+                    すべての資料がアップロードされました（合計 {totalFilesCount} ファイル）
                   </p>
                 </div>
               )}
@@ -280,7 +340,11 @@ export default function Dashboard() {
         </div>
       </main>
 
-      <Chatbot />
+      <Chatbot
+        uploadedFiles={uploadedFiles}
+        selectedComponent={selectedComponent}
+        generatedData={generatedData}
+      />
     </div>
   );
 }
