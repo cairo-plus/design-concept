@@ -25,24 +25,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const checkAuthStatus = async () => {
-        try {
-            const currentUser = await getCurrentUser();
-            const session = await fetchAuthSession();
-
-            if (currentUser && session) {
-                setUser(currentUser);
-                setIsAuthenticated(true);
-            } else {
-                setUser(null);
-                setIsAuthenticated(false);
-            }
-        } catch (error) {
-            console.log("Not authenticated:", error);
-            setUser(null);
-            setIsAuthenticated(false);
-        } finally {
-            setIsLoading(false);
-        }
+        // Auth bypassed - always authenticated
+        setIsAuthenticated(true);
+        setUser({ username: "User" });
+        setIsLoading(false);
     };
 
     const logout = async () => {

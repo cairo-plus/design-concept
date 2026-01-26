@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import Chatbot from "@/components/Chatbot";
+import DesignConceptOutput from "@/components/DesignConceptOutput";
+import { DesignConceptData, generateMockData } from "@/lib/excelExport";
 
 const INPUT_DOCS = [
   "設計構想書",
@@ -20,9 +22,13 @@ export default function Dashboard() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
-  // State for file uploads (mocked)
+  // State for file uploads
   const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: string }>({});
   const [selectedComponent, setSelectedComponent] = useState(COMPONENTS[0]);
+
+  // State for generation
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedData, setGeneratedData] = useState<DesignConceptData | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -44,11 +50,27 @@ export default function Dashboard() {
       const newState = { ...uploadedFiles, [docName]: fileName };
       setUploadedFiles(newState);
       localStorage.setItem("design-concept-files", JSON.stringify(newState));
+      // Clear generated data when files change
+      setGeneratedData(null);
     }
   };
 
+  const handleGenerate = () => {
+    setIsGenerating(true);
+    // Simulate generation delay
+    setTimeout(() => {
+      const uploadedDocNames = Object.values(uploadedFiles);
+      const data = generateMockData(selectedComponent, uploadedDocNames);
+      setGeneratedData(data);
+      setIsGenerating(false);
+    }, 1500);
+  };
+
+  const uploadedCount = Object.keys(uploadedFiles).length;
+  const totalDocs = INPUT_DOCS.length;
+
   if (isLoading || !isAuthenticated) {
-    return null; // Or loading spinner
+    return null;
   }
 
   return (
@@ -71,6 +93,9 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
               <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
               Input Documents
+              <span className="ml-auto text-xs font-normal text-gray-500">
+                {uploadedCount}/{totalDocs}
+              </span>
             </h2>
             <div className="space-y-4">
               {INPUT_DOCS.map((doc) => (
@@ -104,6 +129,7 @@ export default function Dashboard() {
                           delete ns[doc];
                           setUploadedFiles(ns);
                           localStorage.setItem("design-concept-files", JSON.stringify(ns));
+                          setGeneratedData(null);
                         }}
                         className="text-gray-400 hover:text-red-500 p-1"
                         title="Remove/Replace"
@@ -115,6 +141,15 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+
+            {/* Progress indicator */}
+            {uploadedCount > 0 && uploadedCount < totalDocs && (
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs text-yellow-700">
+                  あと {totalDocs - uploadedCount} 件の資料をアップロードしてください
+                </p>
+              </div>
+            )}
           </div>
         </section>
 
@@ -124,16 +159,19 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-800">Target Component</h2>
-              <span className="text-xs font-mono text-gray-400">v0.1.0</span>
+              <span className="text-xs font-mono text-gray-400">v0.2.0</span>
             </div>
             <div className="flex space-x-4">
               {COMPONENTS.map((comp) => (
                 <button
                   key={comp}
-                  onClick={() => setSelectedComponent(comp)}
+                  onClick={() => {
+                    setSelectedComponent(comp);
+                    setGeneratedData(null);
+                  }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedComponent === comp
-                      ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-300 ring-offset-1"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-300 ring-offset-1"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                 >
                   {comp}
@@ -144,21 +182,52 @@ export default function Dashboard() {
 
           {/* Output View */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[500px] flex flex-col">
-            <h2 className="text-lg font-semibold mb-4 text-gray-800 flex items-center justify-between">
-              <span>Design Concept: {selectedComponent}</span>
-              <button className="text-sm text-blue-600 hover:underline">Download PDF</button>
+            <h2 className="text-lg font-semibold mb-4 text-gray-800">
+              Design Concept: {selectedComponent}
             </h2>
 
-            <div className="flex-1 bg-gray-50 border border-dashed border-gray-300 rounded-lg flex items-center justify-center p-8">
-              <div className="text-center text-gray-500">
-                <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                <p className="text-lg font-medium">No Concept Generated Yet</p>
-                <p className="text-sm mt-2 max-w-sm mx-auto">Upload the required documents on the left to start the analysis and generation process.</p>
-                <button className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
-                  Generate Concept
-                </button>
+            {generatedData ? (
+              <DesignConceptOutput
+                data={generatedData}
+                onDownload={() => { }}
+              />
+            ) : (
+              <div className="flex-1 bg-gray-50 border border-dashed border-gray-300 rounded-lg flex items-center justify-center p-8">
+                <div className="text-center text-gray-500">
+                  {isGenerating ? (
+                    <>
+                      <svg className="w-16 h-16 mx-auto mb-4 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <p className="text-lg font-medium">生成中...</p>
+                      <p className="text-sm mt-2">設計構想書を作成しています</p>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      <p className="text-lg font-medium">No Concept Generated Yet</p>
+                      <p className="text-sm mt-2 max-w-sm mx-auto">
+                        {uploadedCount === 0
+                          ? "左側のパネルから資料をアップロードしてください"
+                          : "「Generate Concept」ボタンを押して設計構想書を生成してください"
+                        }
+                      </p>
+                      <button
+                        onClick={handleGenerate}
+                        disabled={uploadedCount === 0}
+                        className={`mt-6 px-6 py-2 rounded-lg transition-colors shadow-sm ${uploadedCount === 0
+                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                            : "bg-blue-600 text-white hover:bg-blue-700"
+                          }`}
+                      >
+                        Generate Concept
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </section>
       </main>
@@ -167,3 +236,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
