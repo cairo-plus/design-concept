@@ -8,12 +8,10 @@ import DesignConceptOutput from "@/components/DesignConceptOutput";
 import { DesignConceptData, generateMockData } from "@/lib/excelExport";
 
 const INPUT_DOCS = [
-  "設計構想書",
-  "商品企画書",
-  "製品企画書",
-  "ハードウエア設計者の対応するリスト",
-  "専門家の研究資料",
-  "法規リスト",
+  "開発車両 商品計画書",
+  "開発車両 製品企画書",
+  "現行車両 設計構想書",
+  "現行車両 部品表",
 ];
 
 const COMPONENTS = ["テールゲート", "フロントバンパー", "フード"];
