@@ -1,7 +1,16 @@
 import { defineBackend } from '@aws-amplify/backend';
-import { auth } from './cognito_auth';
+import { defineAuth } from '@aws-amplify/backend';
 import { storage } from './storage/resource';
 
+/**
+ * Define and configure your auth resource
+ * @see https://docs.amplify.aws/gen2/build-a-backend/auth
+ */
+const auth = defineAuth({
+    loginWith: {
+        email: true
+    }
+});
 
 /**
  * @see https://docs.amplify.aws/gen2/build-a-backend/
