@@ -9,7 +9,7 @@ import { DesignConceptData, generateMockData } from "@/lib/excelExport";
 
 const INPUT_DOCS = [
   "設計構想書",
-  "商品企画書",
+  "商品計画書",
   "製品企画書",
   "ハードウエア設計者の対応するリスト",
   "専門家の研究資料",
