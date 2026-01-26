@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         checkAuthStatus(); // Check on mount
 
         // Listen for auth events
-        const listener = Hub.listen('auth', (data) => {
+        const listener = Hub.listen('auth', (data: any) => {
             switch (data.payload.event) {
                 case 'signedIn':
                     checkAuthStatus();
