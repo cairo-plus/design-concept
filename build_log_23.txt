@@ -1,0 +1,82 @@
+2026-01-25T09:30:11.344Z [INFO]: # Build environment configured with Standard build compute type: 8GiB Memory, 4vCPUs, 128GB Disk Space
+2026-01-25T09:30:12.106Z [INFO]: # Cloning repository: git@github.com:cairo-plus/design-concept.git
+2026-01-25T09:30:13.235Z [INFO]: 
+2026-01-25T09:30:13.235Z [INFO]: Cloning into 'design-concept'...
+2026-01-25T09:30:13.236Z [INFO]: # Switching to commit: d1881a88cf95f1d579bd5a052a43c34906d2b07e
+2026-01-25T09:30:13.253Z [INFO]: Note: switching to 'd1881a88cf95f1d579bd5a052a43c34906d2b07e'.
+                                 You are in 'detached HEAD' state. You can look around, make experimental
+                                 changes and commit them, and you can discard any commits you make in this
+                                 state without impacting any branches by switching back to a branch.
+                                 If you want to create a new branch to retain commits you create, you may
+                                 do so (now or later) by using -c with the switch command. Example:
+                                 git switch -c <new-branch-name>
+                                 Or undo this operation with:
+                                 git switch -
+                                 Turn off this advice by setting config variable advice.detachedHead to false
+                                 HEAD is now at d1881a8 fix: add .js extension to auth import for Node ESM module resolution
+2026-01-25T09:30:13.366Z [INFO]: Successfully cleaned up Git credentials
+2026-01-25T09:30:13.367Z [INFO]: # Checking for Git submodules at: /codebuild/output/src1793157805/src/design-concept/.gitmodules
+2026-01-25T09:30:13.376Z [INFO]: # Retrieving environment cache...
+2026-01-25T09:30:13.420Z [WARNING]: ! Unable to write cache: {"code":"ERR_BAD_REQUEST","message":"Request failed with status code 404"})}
+2026-01-25T09:30:13.420Z [INFO]: ---- Setting Up SSM Secrets ----
+2026-01-25T09:30:13.420Z [INFO]: SSM params {"Path":"/amplify/d36x7v8ch44hay/main/","WithDecryption":true}
+2026-01-25T09:30:13.863Z [INFO]: # No package override configuration found.
+2026-01-25T09:30:13.867Z [INFO]: # Retrieving cache...
+2026-01-25T09:30:13.924Z [INFO]: # Retrieved cache
+2026-01-25T09:30:17.475Z [INFO]: ## Starting Backend Build
+                                 # Starting phase: build
+                                 # Executing command: npm ci --legacy-peer-deps
+2026-01-25T09:31:50.356Z [WARNING]: npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-01-25T09:31:50.445Z [WARNING]: npm warn deprecated @babel/plugin-proposal-class-properties@7.18.6: This proposal has been merged to the ECMAScript standard and thus this plugin is no longer maintained. Please use @babel/plugin-transform-class-properties instead.
+2026-01-25T09:31:51.079Z [WARNING]: npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+2026-01-25T09:31:51.148Z [WARNING]: npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-01-25T09:31:51.244Z [WARNING]: npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-01-25T09:31:51.642Z [WARNING]: npm warn deprecated @babel/plugin-proposal-object-rest-spread@7.20.7: This proposal has been merged to the ECMAScript standard and thus this plugin is no longer maintained. Please use @babel/plugin-transform-object-rest-spread instead.
+2026-01-25T09:31:52.220Z [WARNING]: npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+2026-01-25T09:32:08.119Z [WARNING]: npm warn deprecated core-js@2.6.12: core-js@<3.23.3 is no longer maintained and not recommended for usage due to the number of issues. Because of the V8 engine whims, feature detection in old core-js versions could cause a slowdown up to 100x even if nothing is polyfilled. Some versions have web compatibility issues. Please, upgrade your dependencies to the actual version of core-js.
+2026-01-25T09:32:29.957Z [INFO]: added 1772 packages, and audited 2630 packages in 2m
+2026-01-25T09:32:29.962Z [INFO]: 243 packages are looking for funding
+                                 run `npm fund` for details
+2026-01-25T09:32:30.252Z [INFO]: 35 vulnerabilities (25 low, 6 moderate, 3 high, 1 critical)
+                                 To address issues that do not require attention, run:
+                                 npm audit fix
+                                 To address all issues (including breaking changes), run:
+                                 npm audit fix --force
+                                 Run `npm audit` for details.
+2026-01-25T09:32:30.296Z [INFO]: # Executing command: npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+2026-01-25T09:32:34.467Z [INFO]: 9:32:34 AM Synthesizing backend...
+2026-01-25T09:32:34.473Z [INFO]: 
+2026-01-25T09:32:35.058Z [INFO]: 9:32:35 AM ✔ Backend synthesized in 0.87 seconds
+2026-01-25T09:32:35.059Z [INFO]: 9:32:35 AM Running type checks...
+2026-01-25T09:32:44.805Z [INFO]: 9:32:44 AM ✔ Type checks completed in 9.74 seconds
+2026-01-25T09:32:44.810Z [INFO]: 
+2026-01-25T09:32:44.947Z [INFO]: 
+2026-01-25T09:32:44.948Z [WARNING]: ampx pipeline-deploy
+                                    Command to deploy backends in a custom CI/CD pipeline. This command is not inten
+                                    ded to be used locally.
+                                    Options:
+                                    --debug            Print debug logs to the console
+                                    [boolean] [default: false]
+                                    --branch           Name of the git branch being deployed
+                                    [string] [required]
+                                    --app-id           The app id of the target Amplify app[string] [required]
+                                    --outputs-out-dir  A path to directory where amplify_outputs is written. I
+                                    f not provided defaults to current process working dire
+                                    ctory.                                         [string]
+                                    --outputs-version  Version of the configuration. Version 0 represents clas
+                                    sic amplify-cli config file amplify-configuration and 1
+                                    represents newer config file amplify_outputs
+                                    [string] [choices: "0", "1", "1.1", "1.2", "1.3", "1.4"] [default: "1.4"]
+                                    --outputs-format   amplify_outputs file format
+                                    [string] [choices: "mjs", "json", "json-mobile", "ts", "dart"]
+                                    -h, --help             Show help                                     [boolean]
+2026-01-25T09:32:44.948Z [INFO]: [BackendBuildError] Unable to deploy due to CDK Assembly Error
+                                 ∟ Caused by: [AssemblyError] Assembly builder failed
+                                 ∟ Caused by: [Error] Cannot find module '/codebuild/output/src1793157805/src/design-concept/amplify/auth/resource.js' imported from /codebuild/output/src1793157805/src/design-concept/amplify/backend.ts
+                                 Resolution: Check the Caused by error and fix any issues in your backend code
+2026-01-25T09:32:45.007Z [ERROR]: !!! Build failed
+2026-01-25T09:32:45.007Z [INFO]: Please read more about Amplify Hosting's support for SSR frameworks to find if your build failure is related to an unsupported feature: https://docs.aws.amazon.com/amplify/latest/userguide/amplify-ssr-framework-support.html. You may also find this troubleshooting guide useful: https://docs.aws.amazon.com/amplify/latest/userguide/troubleshooting-ssr-deployment.html
+2026-01-25T09:32:45.007Z [ERROR]: !!! Error: Command failed with exit code 1
+2026-01-25T09:32:45.007Z [INFO]: # Starting environment caching...
+2026-01-25T09:32:45.007Z [INFO]: # Environment caching completed
+

@@ -1,0 +1,204 @@
+2026-01-25T09:05:32.783Z [INFO]: # Build environment configured with Standard build compute type: 8GiB Memory, 4vCPUs, 128GB Disk Space
+2026-01-25T09:05:33.726Z [INFO]: # Cloning repository: git@github.com:cairo-plus/design-concept.git
+2026-01-25T09:05:34.742Z [INFO]: 
+2026-01-25T09:05:34.743Z [INFO]: Cloning into 'design-concept'...
+2026-01-25T09:05:34.743Z [INFO]: # Switching to commit: a1c3c5802d7146baf7f673885f74b42f12c4b614
+2026-01-25T09:05:34.760Z [INFO]: Note: switching to 'a1c3c5802d7146baf7f673885f74b42f12c4b614'.
+                                 You are in 'detached HEAD' state. You can look around, make experimental
+                                 changes and commit them, and you can discard any commits you make in this
+                                 state without impacting any branches by switching back to a branch.
+                                 If you want to create a new branch to retain commits you create, you may
+                                 do so (now or later) by using -c with the switch command. Example:
+                                 git switch -c <new-branch-name>
+                                 Or undo this operation with:
+                                 git switch -
+                                 Turn off this advice by setting config variable advice.detachedHead to false
+                                 HEAD is now at a1c3c58 fix: change moduleResolution to node for Amplify Gen2 compatibility
+2026-01-25T09:05:34.846Z [INFO]: Successfully cleaned up Git credentials
+2026-01-25T09:05:34.846Z [INFO]: # Checking for Git submodules at: /codebuild/output/src4053762871/src/design-concept/.gitmodules
+2026-01-25T09:05:34.856Z [INFO]: # Retrieving environment cache...
+2026-01-25T09:05:34.927Z [WARNING]: ! Unable to write cache: {"code":"ERR_BAD_REQUEST","message":"Request failed with status code 404"})}
+2026-01-25T09:05:34.927Z [INFO]: ---- Setting Up SSM Secrets ----
+2026-01-25T09:05:34.927Z [INFO]: SSM params {"Path":"/amplify/d36x7v8ch44hay/main/","WithDecryption":true}
+2026-01-25T09:05:35.406Z [INFO]: # No package override configuration found.
+2026-01-25T09:05:35.411Z [INFO]: # Retrieving cache...
+2026-01-25T09:05:35.453Z [INFO]: # Retrieved cache
+2026-01-25T09:05:40.273Z [INFO]: ## Starting Backend Build
+                                 # Starting phase: build
+                                 # Executing command: npm ci --legacy-peer-deps
+2026-01-25T09:06:08.843Z [WARNING]: npm error code EUSAGE
+2026-01-25T09:06:08.850Z [WARNING]: npm error
+                                    npm error `npm ci` can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync. Please update your lock file with `npm install` before continuing.
+                                    npm error
+                                    npm error Missing: electron-to-chromium@1.5.278 from lock file
+                                    npm error Missing: node-releases@2.0.27 from lock file
+                                    npm error Missing: neo-async@2.6.2 from lock file
+                                    npm error Missing: wordwrap@1.0.0 from lock file
+                                    npm error Missing: ci-info@4.3.1 from lock file
+                                    npm error Missing: dijkstrajs@1.0.3 from lock file
+                                    npm error Missing: encode-utf8@1.0.3 from lock file
+                                    npm error Missing: pngjs@5.0.0 from lock file
+                                    npm error Missing: isexe@2.0.0 from lock file
+                                    npm error Missing: json-schema-to-ts@3.1.1 from lock file
+                                    npm error Missing: ts-algebra@2.0.0 from lock file
+                                    npm error Missing: @aws-sdk/eventstream-handler-node@3.821.0 from lock file
+                                    npm error Missing: @aws-sdk/middleware-eventstream@3.821.0 from lock file
+                                    npm error Missing: @aws-sdk/types@3.821.0 from lock file
+                                    npm error Missing: @aws-sdk/types@3.821.0 from lock file
+                                    npm error Missing: @aws-cdk/toolkit-lib@0.3.2 from lock file
+                                    npm error Missing: @aws-cdk/cloud-assembly-schema@43.12.0 from lock file
+                                    npm error Missing: @aws-cdk/region-info@2.236.0 from lock file
+                                    npm error Missing: @smithy/middleware-endpoint@4.4.11 from lock file
+                                    npm error Missing: @smithy/node-http-handler@4.4.8 from lock file
+                                    npm error Missing: @smithy/property-provider@4.2.8 from lock file
+                                    npm error Missing: @smithy/shared-ini-file-loader@4.4.3 from lock file
+                                    npm error Missing: @smithy/util-retry@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-stream@4.5.10 from lock file
+                                    npm error Missing: camelcase@6.3.0 from lock file
+                                    npm error Missing: cdk-assets@3.3.1 from lock file
+                                    npm error Missing: cdk-from-cfn@0.210.0 from lock file
+                                    npm error Missing: chalk@4.1.2 from lock file
+                                    npm error Missing: decamelize@5.0.1 from lock file
+                                    npm error Missing: fs-extra@9.1.0 from lock file
+                                    npm error Missing: json-diff@1.0.6 from lock file
+                                    npm error Missing: promptly@3.2.0 from lock file
+                                    npm error Missing: proxy-agent@6.5.0 from lock file
+                                    npm error Missing: strip-ansi@6.0.1 from lock file
+                                    npm error Missing: uuid@11.1.0 from lock file
+                                    npm error Missing: wrap-ansi@7.0.0 from lock file
+                                    npm error Missing: yargs@15.4.1 from lock file
+                                    npm error Missing: @ewoudenberg/difflib@0.1.0 from lock file
+                                    npm error Missing: colors@1.4.0 from lock file
+                                    npm error Missing: dreamopt@0.8.0 from lock file
+                                    npm error Missing: heap@0.2.7 from lock file
+                                    npm error Missing: read@1.0.7 from lock file
+                                    npm error Missing: agent-base@7.1.4 from lock file
+                                    npm error Missing: http-proxy-agent@7.0.2 from lock file
+                                    npm error Missing: https-proxy-agent@7.0.6 from lock file
+                                    npm error Missing: lru-cache@7.18.3 from lock file
+                                    npm error Missing: pac-proxy-agent@7.2.0 from lock file
+                                    npm error Missing: proxy-from-env@1.1.0 from lock file
+                                    npm error Missing: socks-proxy-agent@8.0.5 from lock file
+                                    npm error Missing: @tootallnate/quickjs-emscripten@0.23.0 from lock file
+                                    npm error Missing: get-uri@6.0.5 from lock file
+                                    npm error Missing: pac-resolver@7.0.1 from lock file
+                                    npm error Missing: basic-ftp@5.1.0 from lock file
+                                    npm error Missing: data-uri-to-buffer@6.0.2 from lock file
+                                    npm error Missing: degenerator@5.0.1 from lock file
+                                    npm error Missing: netmask@2.0.2 from lock file
+                                    npm error Missing: ast-types@0.13.4 from lock file
+                                    npm error Missing: escodegen@2.1.0 from lock file
+                                    npm error Missing: esprima@4.0.1 from lock file
+                                    npm error Missing: source-map@0.6.1 from lock file
+                                    npm error Missing: mute-stream@0.0.8 from lock file
+                                    npm error Missing: socks@2.8.7 from lock file
+                                    npm error Missing: ip-address@10.1.0 from lock file
+                                    npm error Missing: smart-buffer@4.2.0 from lock file
+                                    npm error Missing: ansi-regex@5.0.1 from lock file
+                                    npm error Missing: cliui@6.0.0 from lock file
+                                    npm error Missing: decamelize@1.2.0 from lock file
+                                    npm error Missing: find-up@4.1.0 from lock file
+                                    npm error Missing: y18n@4.0.3 from lock file
+                                    npm error Missing: yargs-parser@18.1.3 from lock file
+                                    npm error Missing: wrap-ansi@6.2.0 from lock file
+                                    npm error Missing: locate-path@5.0.0 from lock file
+                                    npm error Missing: p-locate@4.1.0 from lock file
+                                    npm error Missing: p-limit@2.3.0 from lock file
+                                    npm error Missing: camelcase@5.3.1 from lock file
+                                    npm error Missing: decamelize@1.2.0 from lock file
+                                    npm error Missing: @smithy/core@3.21.1 from lock file
+                                    npm error Missing: @smithy/middleware-serde@4.2.9 from lock file
+                                    npm error Missing: @smithy/node-config-provider@4.3.8 from lock file
+                                    npm error Missing: @smithy/types@4.12.0 from lock file
+                                    npm error Missing: @smithy/url-parser@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-middleware@4.2.8 from lock file
+                                    npm error Missing: @smithy/protocol-http@5.3.8 from lock file
+                                    npm error Missing: @smithy/util-base64@4.3.0 from lock file
+                                    npm error Missing: @smithy/util-body-length-browser@4.2.0 from lock file
+                                    npm error Missing: @smithy/util-utf8@4.2.0 from lock file
+                                    npm error Missing: @smithy/abort-controller@4.2.8 from lock file
+                                    npm error Missing: @smithy/querystring-builder@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-uri-escape@4.2.0 from lock file
+                                    npm error Missing: @smithy/querystring-parser@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-buffer-from@4.2.0 from lock file
+                                    npm error Missing: @smithy/is-array-buffer@4.2.0 from lock file
+                                    npm error Missing: @smithy/service-error-classification@4.2.8 from lock file
+                                    npm error Missing: @smithy/fetch-http-handler@5.3.9 from lock file
+                                    npm error Missing: @smithy/util-hex-encoding@4.2.0 from lock file
+                                    npm error Missing: jsonfile@6.2.0 from lock file
+                                    npm error Missing: universalify@2.0.1 from lock file
+                                    npm error Missing: @aws-cdk/toolkit-lib@0.3.2 from lock file
+                                    npm error Missing: @aws-cdk/cloud-assembly-schema@43.12.0 from lock file
+                                    npm error Missing: @smithy/middleware-endpoint@4.4.11 from lock file
+                                    npm error Missing: @smithy/node-http-handler@4.4.8 from lock file
+                                    npm error Missing: @smithy/property-provider@4.2.8 from lock file
+                                    npm error Missing: @smithy/shared-ini-file-loader@4.4.3 from lock file
+                                    npm error Missing: @smithy/util-retry@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-stream@4.5.10 from lock file
+                                    npm error Missing: camelcase@6.3.0 from lock file
+                                    npm error Missing: cdk-from-cfn@0.210.0 from lock file
+                                    npm error Missing: chalk@4.1.2 from lock file
+                                    npm error Missing: decamelize@5.0.1 from lock file
+                                    npm error Missing: fs-extra@9.1.0 from lock file
+                                    npm error Missing: strip-ansi@6.0.1 from lock file
+                                    npm error Missing: uuid@11.1.0 from lock file
+                                    npm error Missing: wrap-ansi@7.0.0 from lock file
+                                    npm error Missing: yargs@15.4.1 from lock file
+                                    npm error Missing: ansi-regex@5.0.1 from lock file
+                                    npm error Missing: cliui@6.0.0 from lock file
+                                    npm error Missing: decamelize@1.2.0 from lock file
+                                    npm error Missing: find-up@4.1.0 from lock file
+                                    npm error Missing: y18n@4.0.3 from lock file
+                                    npm error Missing: yargs-parser@18.1.3 from lock file
+                                    npm error Missing: wrap-ansi@6.2.0 from lock file
+                                    npm error Missing: locate-path@5.0.0 from lock file
+                                    npm error Missing: p-locate@4.1.0 from lock file
+                                    npm error Missing: p-limit@2.3.0 from lock file
+                                    npm error Missing: camelcase@5.3.1 from lock file
+                                    npm error Missing: decamelize@1.2.0 from lock file
+                                    npm error Missing: @smithy/core@3.21.1 from lock file
+                                    npm error Missing: @smithy/middleware-serde@4.2.9 from lock file
+                                    npm error Missing: @smithy/node-config-provider@4.3.8 from lock file
+                                    npm error Missing: @smithy/types@4.12.0 from lock file
+                                    npm error Missing: @smithy/url-parser@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-middleware@4.2.8 from lock file
+                                    npm error Missing: @smithy/protocol-http@5.3.8 from lock file
+                                    npm error Missing: @smithy/util-base64@4.3.0 from lock file
+                                    npm error Missing: @smithy/util-body-length-browser@4.2.0 from lock file
+                                    npm error Missing: @smithy/util-utf8@4.2.0 from lock file
+                                    npm error Missing: @smithy/abort-controller@4.2.8 from lock file
+                                    npm error Missing: @smithy/querystring-builder@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-uri-escape@4.2.0 from lock file
+                                    npm error Missing: @smithy/querystring-parser@4.2.8 from lock file
+                                    npm error Missing: @smithy/util-buffer-from@4.2.0 from lock file
+                                    npm error Missing: @smithy/is-array-buffer@4.2.0 from lock file
+                                    npm error Missing: @smithy/service-error-classification@4.2.8 from lock file
+                                    npm error Missing: @smithy/fetch-http-handler@5.3.9 from lock file
+                                    npm error Missing: @smithy/util-hex-encoding@4.2.0 from lock file
+                                    npm error Missing: jsonfile@6.2.0 from lock file
+                                    npm error Missing: universalify@2.0.1 from lock file
+                                    npm error
+                                    npm error Clean install a project
+                                    npm error
+                                    npm error Usage:
+                                    npm error npm ci
+                                    npm error
+                                    npm error Options:
+                                    npm error [--install-strategy <hoisted|nested|shallow|linked>] [--legacy-bundling]
+                                    npm error [--global-style] [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
+                                    npm error [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
+                                    npm error [--strict-peer-deps] [--foreground-scripts] [--ignore-scripts] [--no-audit]
+                                    npm error [--no-bin-links] [--no-fund] [--dry-run]
+                                    npm error [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
+                                    npm error [-ws|--workspaces] [--include-workspace-root] [--install-links]
+                                    npm error
+                                    npm error aliases: clean-install, ic, install-clean, isntall-clean
+                                    npm error
+                                    npm error Run "npm help ci" for more info
+                                    npm error A complete log of this run can be found in: /root/.npm/_logs/2026-01-25T09_05_44_513Z-debug-0.log
+2026-01-25T09:06:08.955Z [ERROR]: !!! Build failed
+2026-01-25T09:06:08.955Z [INFO]: Please read more about Amplify Hosting's support for SSR frameworks to find if your build failure is related to an unsupported feature: https://docs.aws.amazon.com/amplify/latest/userguide/amplify-ssr-framework-support.html. You may also find this troubleshooting guide useful: https://docs.aws.amazon.com/amplify/latest/userguide/troubleshooting-ssr-deployment.html
+2026-01-25T09:06:08.955Z [ERROR]: !!! Error: Command failed with exit code 1
+2026-01-25T09:06:08.955Z [INFO]: # Starting environment caching...
+2026-01-25T09:06:08.955Z [INFO]: # Environment caching completed
+

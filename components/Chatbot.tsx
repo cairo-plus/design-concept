@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { DesignConceptData } from "@/lib/excelExport";
 
 interface ChatbotProps {
-    uploadedFiles: { [key: string]: string[] };
+    uploadedFiles: { [key: string]: { name: string; path: string; uploadedAt: string }[] };
     selectedComponent: string;
     generatedData: DesignConceptData | null;
 }
@@ -44,8 +44,8 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
                 if (uploadedList.length === 0) {
                     response = "現在、アップロードされた資料はありません。左側のパネルから資料をアップロードしてください。";
                 } else {
-                    response = `現在アップロードされている資料（${uploadedList.length}種類）:\n\n${uploadedList.map(([docType, fileNames], i) =>
-                        `${i + 1}. **${docType}**:\n${fileNames.map(f => `   - ${f}`).join('\n')}`
+                    response = `現在アップロードされている資料（${uploadedList.length}種類）:\n\n${uploadedList.map(([docType, files], i) =>
+                        `${i + 1}. **${docType}**:\n${files.map(f => `   - ${f.name}`).join('\n')}`
                     ).join('\n')}`;
                 }
             } else if (userMessage.includes("コンポーネント") || userMessage.includes("部品") || userMessage.includes("対象")) {

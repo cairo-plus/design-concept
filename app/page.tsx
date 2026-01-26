@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import Chatbot from "@/components/Chatbot";
 import DesignConceptOutput from "@/components/DesignConceptOutput";
 import { DesignConceptData, generateMockData } from "@/lib/excelExport";
+// Amplify Storage
+import { uploadData, remove } from "aws-amplify/storage";
 
 const INPUT_DOCS = [
   "設計構想書",
@@ -18,13 +20,23 @@ const INPUT_DOCS = [
 
 const COMPONENTS = ["テールゲート", "フロントバンパー", "フード"];
 
+// File metadata interface
+export interface UploadedFile {
+  name: string;
+  path: string;
+  uploadedAt: string;
+}
+
 export default function Dashboard() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
-  // State for file uploads - now supports multiple files per document type
-  const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: string[] }>({});
+  // State for file uploads - updated to store full metadata
+  const [uploadedFiles, setUploadedFiles] = useState<{ [key: string]: UploadedFile[] }>({});
   const [selectedComponent, setSelectedComponent] = useState(COMPONENTS[0]);
+
+  // State for upload progress/status
+  const [isUploading, setIsUploading] = useState(false);
 
   // State for generation
   const [isGenerating, setIsGenerating] = useState(false);
@@ -38,53 +50,106 @@ export default function Dashboard() {
 
   // Load from local storage
   useEffect(() => {
-    const saved = localStorage.getItem("design-concept-files-v2");
+    const saved = localStorage.getItem("design-concept-files-v3");
     if (saved) {
-      setUploadedFiles(JSON.parse(saved));
+      try {
+        setUploadedFiles(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse saved files", e);
+      }
     }
   }, []);
 
+  // Helper to format timestamp
+  const getTimestampFolder = () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    return `${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
+  };
+
   // Handle adding files (multiple files at once)
-  const handleFileUpload = (docName: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (docName: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFileNames = Array.from(e.target.files).map(f => f.name);
-      const existingFiles = uploadedFiles[docName] || [];
-      // Avoid duplicate filenames
-      const uniqueNewFiles = newFileNames.filter(name => !existingFiles.includes(name));
-      const updatedFiles = [...existingFiles, ...uniqueNewFiles];
-      const newState = { ...uploadedFiles, [docName]: updatedFiles };
-      setUploadedFiles(newState);
-      localStorage.setItem("design-concept-files-v2", JSON.stringify(newState));
-      // Clear generated data when files change
-      setGeneratedData(null);
+      setIsUploading(true);
+      const newFiles: UploadedFile[] = [];
+      const timestampFolder = getTimestampFolder();
+
+      try {
+        for (let i = 0; i < e.target.files.length; i++) {
+          const file = e.target.files[i];
+          // S3 Path: public/{docName}/{timestamp}/{fileName}
+          // Note: docName might contain Japanese, but S3 supports UTF-8 keys.
+          const path = `public/${docName}/${timestampFolder}/${file.name}`;
+
+          await uploadData({
+            path: path,
+            data: file,
+          }).result;
+
+          newFiles.push({
+            name: file.name,
+            path: path,
+            uploadedAt: new Date().toISOString()
+          });
+        }
+
+        const existingFiles = uploadedFiles[docName] || [];
+        // Determine unique files based on name (optional: allows duplicates if in different folders, but UI might be confusing)
+        // For now, simply append all new uploads as they are timely separated
+        const updatedFiles = [...existingFiles, ...newFiles];
+        const newState = { ...uploadedFiles, [docName]: updatedFiles };
+
+        setUploadedFiles(newState);
+        localStorage.setItem("design-concept-files-v3", JSON.stringify(newState));
+
+        // Clear generated data when files change
+        setGeneratedData(null);
+      } catch (error) {
+        console.error("Upload failed", error);
+        alert("ファイルのアップロードに失敗しました");
+      } finally {
+        setIsUploading(false);
+      }
     }
     // Reset input value to allow re-selecting the same file
     e.target.value = '';
   };
 
   // Handle removing a single file from a document type
-  const handleRemoveFile = (docName: string, fileName: string) => {
+  const handleRemoveFile = async (docName: string, fileToRemove: UploadedFile) => {
+    if (!confirm(`「${fileToRemove.name}」をリストから削除しますか？\n(S3上のファイルは保持されます)`)) return;
+
+    // Remove from UI list only (keep in S3)
     const existingFiles = uploadedFiles[docName] || [];
-    const updatedFiles = existingFiles.filter(f => f !== fileName);
+    const updatedFiles = existingFiles.filter(f => f.path !== fileToRemove.path);
+
     let newState;
     if (updatedFiles.length === 0) {
-      // Remove the key entirely if no files left
       newState = { ...uploadedFiles };
       delete newState[docName];
     } else {
       newState = { ...uploadedFiles, [docName]: updatedFiles };
     }
+
     setUploadedFiles(newState);
-    localStorage.setItem("design-concept-files-v2", JSON.stringify(newState));
+    localStorage.setItem("design-concept-files-v3", JSON.stringify(newState));
     setGeneratedData(null);
   };
 
   // Handle clearing all files from a document type
-  const handleClearAllFiles = (docName: string) => {
+  const handleClearAllFiles = async (docName: string) => {
+    if (!confirm(`「${docName}」のすべてのファイルをリストから削除しますか？\n(S3上のファイルは保持されます)`)) return;
+
+    // Remove from UI list only (keep in S3)
     const newState = { ...uploadedFiles };
     delete newState[docName];
     setUploadedFiles(newState);
-    localStorage.setItem("design-concept-files-v2", JSON.stringify(newState));
+    localStorage.setItem("design-concept-files-v3", JSON.stringify(newState));
     setGeneratedData(null);
   };
 
@@ -93,7 +158,7 @@ export default function Dashboard() {
     // Simulate generation delay
     setTimeout(() => {
       // Flatten all uploaded file names
-      const uploadedDocNames = Object.values(uploadedFiles).flat();
+      const uploadedDocNames = Object.values(uploadedFiles).flat().map(f => f.name);
       const data = generateMockData(selectedComponent, uploadedDocNames);
       setGeneratedData(data);
       setIsGenerating(false);
@@ -213,11 +278,11 @@ export default function Dashboard() {
                       {/* List of uploaded files */}
                       {hasFiles && (
                         <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
-                          {files.map((fileName, idx) => (
+                          {files.map((file, idx) => (
                             <div key={idx} className="flex items-center justify-between gap-2 text-xs text-slate-600 bg-white rounded px-2 py-1">
-                              <span className="truncate flex-1" title={fileName}>{fileName}</span>
+                              <span className="truncate flex-1" title={file.name}>{file.name}</span>
                               <button
-                                onClick={() => handleRemoveFile(doc, fileName)}
+                                onClick={() => handleRemoveFile(doc, file)}
                                 className="text-slate-400 hover:text-red-500 transition flex-shrink-0"
                                 title="削除"
                               >
