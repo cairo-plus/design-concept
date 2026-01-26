@@ -1,6 +1,6 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { defineAuth } from '@aws-amplify/backend';
-import { storage } from './storage/resource';
+import { defineStorage } from '@aws-amplify/backend';
 
 /**
  * Define and configure your auth resource
@@ -10,6 +10,22 @@ const auth = defineAuth({
     loginWith: {
         email: true
     }
+});
+
+/**
+ * Define and configure your storage resource
+ * @see https://docs.amplify.aws/gen2/build-a-backend/storage
+ */
+const storage = defineStorage({
+    name: 'designConceptFiles',
+    access: (allow) => ({
+        'design-concept/*': [
+            allow.authenticated.to(['read', 'write']),
+        ],
+        'public/*': [
+            allow.authenticated.to(['read', 'write']),
+        ],
+    })
 });
 
 /**
