@@ -139,6 +139,17 @@ Next.js アプリケーションを Vercel にデプロイするのが最も簡�
 - [AWS Amplify Documentation](https://docs.amplify.aws/) - AWS Amplify のドキュメント
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs) - Tailwind CSS のドキュメント
 
+## ☁️ AWS Resources (Deployed)
+
+| Resource Type | Resource Name / ID |
+| :--- | :--- |
+| **App ID** | `d36x7v8ch44hay` |
+| **Region** | `ap-northeast-1` |
+| **S3 Bucket** | `amplify-d36x7v8ch44hay-ma-designconceptfilesbucket-bsc5b7uvescf` |
+| **User Pool ID** | `ap-northeast-1_6hAFP3QRB` |
+| **User Pool Client ID** | `5rmelidmev9jpmbq4f9sh0mkce` |
+| **Identity Pool ID** | `ap-northeast-1:0e8b395b-accc-43fc-ae66-9e1b6329e958` |
+
 ## 📄 ライセンス
 
 Private
