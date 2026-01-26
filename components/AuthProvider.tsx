@@ -3,12 +3,13 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, signOut, fetchAuthSession } from "aws-amplify/auth";
+import { Hub } from "aws-amplify/utils";
 
 interface AuthContextType {
     isAuthenticated: boolean;
     user: any | null;
     logout: () => Promise<void>;
-    login: (password: string) => boolean;
+    login: (password?: string) => boolean;
     isLoading: boolean;
 }
 
@@ -21,7 +22,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
 
     useEffect(() => {
-        checkAuthStatus();
+        checkAuthStatus(); // Check on mount
+
+        // Listen for auth events
+        const listener = Hub.listen('auth', (data) => {
+            switch (data.payload.event) {
+                case 'signedIn':
+                    checkAuthStatus();
+                    break;
+                case 'signedOut':
+                    setUser(null);
+                    setIsAuthenticated(false);
+                    router.push("/login");
+                    break;
+            }
+        });
+
+        return () => listener();
     }, []);
 
     const checkAuthStatus = async () => {
@@ -33,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (error) {
             setIsAuthenticated(false);
             setUser(null);
-            // Don't redirect here, just set state. Protected routes should handle redirection.
         } finally {
             setIsLoading(false);
         }
@@ -42,19 +58,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = async () => {
         try {
             await signOut();
-            setUser(null);
-            setIsAuthenticated(false);
-            router.push("/login");
+            // Hub will handle the state update
         } catch (error) {
             console.error("Error signing out:", error);
         }
     };
 
-    const login = (password: string) => {
-        if (password === "cairo") {
-            setIsAuthenticated(true);
-            return true;
-        }
+    // Removed manual login function as we use Amplify Authenticator check
+    const login = () => {
+        console.warn("Login should be handled by Authenticator");
         return false;
     };
 
