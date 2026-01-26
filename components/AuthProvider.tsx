@@ -25,10 +25,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const checkAuthStatus = async () => {
-        // Auth bypassed - always authenticated
-        setIsAuthenticated(true);
-        setUser({ username: "User" });
-        setIsLoading(false);
+        try {
+            const user = await getCurrentUser();
+            const session = await fetchAuthSession();
+            setIsAuthenticated(!!user && !!session.tokens);
+            setUser(user);
+        } catch (error) {
+            setIsAuthenticated(false);
+            setUser(null);
+            // Don't redirect here, just set state. Protected routes should handle redirection.
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const logout = async () => {
