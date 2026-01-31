@@ -159,6 +159,7 @@ graph TD
 | **User Pool ID** | `ap-northeast-1_6hAFP3QRB` |
 | **User Pool Client ID** | `5rmelidmev9jpmbq4f9sh0mkce` |
 | **Identity Pool ID** | `ap-northeast-1:0e8b395b-accc-43fc-ae66-9e1b6329e958` |
+| **GraphQL API Endpoint** | `https://doefvmocm5a2vplpaytoybboqa.appsync-api.ap-northeast-1.amazonaws.com/graphql` |
 
 ## 📄 ライセンス
 
