@@ -1,5 +1,5 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
-import { ragChat } from '../functions/rag-chat/resource';
+import { ragChat } from '../functions/rag-chat/resource.ts';
 
 const schema = a.schema({
     ChatResponse: a.customType({
