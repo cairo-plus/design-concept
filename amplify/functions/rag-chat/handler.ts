@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import { PDFParse } from "pdf-parse";
+import pdf from "pdf-parse";
 import * as XLSX from "xlsx";
 import axios from "axios";
 
@@ -75,8 +75,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
                 if (file.Key.endsWith(".pdf")) {
                     const buffer = Buffer.from(byteArray);
-                    const parser = new PDFParse({ data: buffer });
-                    const data = await parser.getText();
+                    const data = await pdf(buffer);
                     textContent = data.text;
                 } else if (file.Key.endsWith(".xlsx")) {
                     const workbook = XLSX.read(byteArray, { type: "buffer" });
