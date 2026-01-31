@@ -21,3 +21,14 @@ body {
 .fade-in-up {
   animation: fade-in-up 0.35s ease-out;
 }
+
+/* Amplify UI Overrides */
+[data-amplify-theme] {
+  --amplify-colors-brand-primary-10: #e0f2fe; /* sky-100 */
+  --amplify-colors-brand-primary-20: #bae6fd; /* sky-200 */
+  --amplify-colors-brand-primary-40: #7dd3fc; /* sky-300 */
+  --amplify-colors-brand-primary-60: #38bdf8; /* sky-400 */
+  --amplify-colors-brand-primary-80: #0ea5e9; /* sky-500 */
+  --amplify-colors-brand-primary-90: #0284c7; /* sky-600 */
+  --amplify-colors-brand-primary-100: #0369a1; /* sky-700 */
+}
