@@ -1,8 +1,7 @@
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import { env } from "$amplify/env/rag-chat";
+import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
-import pdf from "pdf-parse";
 import axios from "axios";
 
 // Clients
@@ -25,7 +24,7 @@ interface ChatResponse {
 export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     console.log("Received event:", JSON.stringify(event));
     const { query, uploadedDocs = [] } = event.arguments;
-    const bucketName = env.designconceptfilesbucket_BUCKET_NAME;
+    const bucketName = process.env.BUCKET_NAME;
 
     if (!bucketName) {
         throw new Error("Bucket name not found in environment variables");
@@ -76,7 +75,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
                 if (file.Key.endsWith(".pdf")) {
                     const buffer = Buffer.from(byteArray);
-                    const data = await pdf(buffer);
+                    const parser = new PDFParse({ data: buffer });
+                    const data = await parser.getText();
                     textContent = data.text;
                 } else if (file.Key.endsWith(".xlsx")) {
                     const workbook = XLSX.read(byteArray, { type: "buffer" });
