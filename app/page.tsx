@@ -5,9 +5,13 @@ import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import Chatbot from "@/components/Chatbot";
 import DesignConceptOutput from "@/components/DesignConceptOutput";
-import { DesignConceptData, generateMockData } from "@/lib/excelExport";
+import { DesignConceptData } from "@/lib/excelExport";
 // Amplify Storage
 import { uploadData, remove } from "aws-amplify/storage";
+import { generateClient } from "aws-amplify/data";
+import type { Schema } from "@/amplify/data/resource";
+
+const client = generateClient<Schema>();
 
 const INPUT_DOCS = [
   "設計構想書",
@@ -153,16 +157,51 @@ export default function Dashboard() {
     setGeneratedData(null);
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    // Simulate generation delay
-    setTimeout(() => {
-      // Flatten all uploaded file names
-      const uploadedDocNames = Object.values(uploadedFiles).flat().map(f => f.name);
-      const data = generateMockData(selectedComponent, uploadedDocNames);
+
+    try {
+      const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.name);
+
+      const prompt = `
+Generate a design concept data for component "${selectedComponent}" based on the provided documents.
+Strictly return valid JSON only. No strings before or after the JSON.
+The JSON must match this structure:
+{
+  "componentName": "${selectedComponent}",
+  "generatedAt": "${new Date().toLocaleDateString("ja-JP")}",
+  "uploadedDocuments": [${allUploadedDocs.map(d => `"${d}"`).join(',')}],
+  "sections": {
+    "overview": "Summary text...",
+    "requirements": [ { "id": "REQ-001", "description": "...", "priority": "High", "source": "Source Name" } ],
+    "regulations": [ { "code": "Reg Code", "description": "...", "status": "Compliant", "source": "Source Name" } ],
+    "references": [ { "name": "Ref Name", "type": "File" } ]
+  }
+}
+If specific data is not found, infer reasonable engineering defaults or state "Not specified" but maintain the JSON structure.
+      `;
+
+      const response = await client.queries.ragChat({
+        query: prompt,
+        uploadedDocs: allUploadedDocs.length > 0 ? allUploadedDocs : undefined
+      });
+
+      const jsonString = response.data?.answer || "{}";
+      // Sanitize string if LLM adds markdown blocks
+      const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+
+      const data: DesignConceptData = JSON.parse(cleanJson);
+
+      // Fallback if parsing works but some fields missing?
+      if (!data.sections) throw new Error("Invalid JSON structure");
+
       setGeneratedData(data);
+    } catch (e) {
+      console.error("Generation failed", e);
+      alert("生成に失敗しました: " + (e as Error).message);
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   // Count document types with at least one file
@@ -199,7 +238,7 @@ export default function Dashboard() {
             <div className="leading-tight">
               <p className="text-lg font-semibold">設計構想書自動生成システム</p>
               <p className="text-xs text-sky-50/90">
-                資料をアップロードして、設計構想書を自動生成
+                資料をアップロードして、設計構想書を自動生成 (Real RAG)
               </p>
             </div>
           </div>
@@ -327,7 +366,7 @@ export default function Dashboard() {
                     aria-hidden="true"
                   />
                 </div>
-                <span className="text-xs font-mono text-slate-400">v0.2.0</span>
+                <span className="text-xs font-mono text-slate-400">v1.0.0</span>
               </div>
               <div className="flex flex-wrap gap-3">
                 {COMPONENTS.map((comp) => (
@@ -373,7 +412,10 @@ export default function Dashboard() {
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                         <p className="text-lg font-semibold text-slate-900">生成中...</p>
-                        <p className="text-sm mt-2 text-slate-600">設計構想書を作成しています</p>
+                        <p className="text-sm mt-2 text-slate-600">
+                          S3ファイル解析・Bedrock推論を実行中<br />
+                          (時間がかかる場合があります)
+                        </p>
                       </>
                     ) : (
                       <>
@@ -393,7 +435,7 @@ export default function Dashboard() {
                             : "bg-sky-600 text-white hover:bg-sky-500"
                             }`}
                         >
-                          構想書を生成
+                          構想書を生成 (Real RAG)
                         </button>
                       </>
                     )}

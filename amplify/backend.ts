@@ -1,8 +1,10 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { storage } from './storage/resource';
+import { data } from './data/resource';
 import { processBedrock } from './functions/process-bedrock/resource';
 import { chunkDocuments } from './functions/chunk-documents/resource';
+import { ragChat } from './functions/rag-chat/resource';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
@@ -13,12 +15,28 @@ import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 const backend = defineBackend({
     auth,
     storage,
+    data,
     processBedrock,
     chunkDocuments,
+    ragChat,
 });
 
 const bucket = backend.storage.resources.bucket;
 const { cfnBucket } = backend.storage.resources.cfnResources;
+
+import { Function } from 'aws-cdk-lib/aws-lambda';
+// ...
+// Grant permissions to ragChat
+const ragChatLambda = backend.ragChat.resources.lambda as Function;
+bucket.grantRead(ragChatLambda);
+ragChatLambda.addEnvironment("BUCKET_NAME", bucket.bucketName);
+
+ragChatLambda.addToRolePolicy(new PolicyStatement({
+    actions: ["bedrock:InvokeModel"],
+    resources: ["*"]
+}));
+
+
 
 // Allow CORS
 cfnBucket.corsConfiguration = {
