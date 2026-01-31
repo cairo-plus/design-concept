@@ -10,7 +10,7 @@
 - **コンポーネント選択**: テールゲート、フロントバンパー、フードなどの対象コンポーネントを選択
 - **Real RAG 生成**: アップロードされた資料の中身を解析し、AWS Bedrock (Claude 3.5 Sonnet) を使用して設計構想書を自動生成
 - **引用付きチャットボット**: アップロード資料に基づいた回答と、その根拠となる資料名の明示
-- **インターネット検索フォールバック**: 資料にない情報はインターネット（シミュレーション）から補完
+- **インターネット検索 (Real Web Search)**: 資料にない情報は Tavily AI Search API を使用してウェブ全体から最新情報を取得
 - **認証機能**: AWS Amplify による安全なユーザー認証
 
 ## 🚀 技術スタック
@@ -20,6 +20,7 @@
 - **UI**: React 18.3.1
 - **スタイリング**: Tailwind CSS 4.0
 - **認証**: AWS Amplify 6.6.1
+- **検索API**: Tavily AI Search API
 - **開発環境**: Node.js 20+
 
 ## 📁 プロジェクト構造
@@ -34,6 +35,12 @@ design-concept/
 ├── components/            # Reactコンポーネント
 │   ├── AuthProvider.tsx   # 認証プロバイダー
 │   └── Chatbot.tsx        # チャットボット
+├── amplify/               # Amplify バックエンド定義
+│   ├── auth/              # 認証リソース
+│   ├── data/              # データリソース (AppSync)
+│   ├── storage/           # ストレージリソース (S3)
+│   └── functions/         # Lambda関数
+│       └── rag-chat/      # RAGチャットボット (Tavily連携)
 ├── lib/                   # ユーティリティ
 ├── public/                # 静的ファイル
 └── package.json          # 依存関係
@@ -45,6 +52,7 @@ design-concept/
 
 - Node.js 20 以上
 - npm または yarn、pnpm、bun
+- **Tavily API Key** (検索機能を使用する場合)
 
 ### インストール
 
@@ -99,7 +107,15 @@ npm run lint
 - AWS アカウント
 - AWS CLI が設定済みであること
 
-### 2. ローカル開発環境 (Sandbox)
+### 2. 環境変数の設定 (Secrets)
+ウェブ検索機能を使用するには、Amplify Console で以下のシークレットを設定する必要があります。
+1. Amplify Console > アプリ選択 > Hosting > Secrets
+2. `Manage secrets` をクリック
+3. 以下のキーと値を設定:
+   - Key: `TAVILY_API_KEY`
+   - Value: `tvly-xxxx...` (あなたのTavily APIキー)
+
+### 3. ローカル開発環境 (Sandbox)
 ローカルでバックエンドを開発・テストするために、Sandboxを起動します。
 
 ```bash
@@ -107,7 +123,7 @@ npx ampx sandbox
 ```
 これにより、隔離されたAWS環境がプロビジョニングされ、`amplify_outputs.json` が生成されます。
 
-### 3. デプロイ
+### 4. デプロイ
 GitHubリポジトリにプッシュし、Amplify ConsoleまたはVercelでリポジトリを接続してデプロイします。
 
 ## 🔐 認証
@@ -122,6 +138,8 @@ GitHubリポジトリにプッシュし、Amplify ConsoleまたはVercelでリ�
 - `@aws-amplify/ui-react`: Amplify UI コンポーネント
 - `tailwindcss`: CSS フレームワーク
 - `typescript`: TypeScript
+- `pdf-parse`: PDFテキスト抽出
+- `axios`: HTTPクライアント (Tavily API用)
 
 ## 🏗️ アーキテクチャ (Real RAG)
 
@@ -136,6 +154,8 @@ graph TD
     Lambda -->|Extracts Text| Parser[PDF/Excel Parser]
     Lambda -->|Generates Answer| Bedrock[AWS Bedrock (Claude 3.5 Sonnet)]
     Bedrock -->|Returns| Lambda
+    Lambda -- "Not found?" --> Tavily[Tavily Search API]
+    Tavily -- "Web Results" --> Lambda
     Lambda -->|Response + Citations| UX
 ```
 
@@ -144,8 +164,9 @@ graph TD
 2.  チャットまたは生成ボタン押下時に、Lambda関数が起動
 3.  LambdaがS3から関連ファイルをダウンロードし、テキストを抽出 (Context Stuffing)
 4.  抽出されたテキストと質問を Bedrock (Claude 3.5 Sonnet) に送信
-5.  情報が見つからない場合は、インターネット検索モード（シミュレーション）にフォールバック
-6.  回答とともに、参照したファイル名を引用として返却
+5.  情報が見つからない場合は、**Tavily API** を使用してインターネット検索を実行
+6.  検索結果を含めて再回答を生成
+7.  回答とともに、参照したファイル名またはURLを引用として返却
 
 
 
