@@ -7,7 +7,7 @@
         "@aws-sdk/client-s3": "^3.500.0",
         "@aws-sdk/client-bedrock-runtime": "^3.500.0",
         "axios": "^1.6.0",
-        "pdf-parse": "^1.1.1",
+        "pdf-parse": "^2.4.5",
         "xlsx": "^0.18.5"
     },
     "devDependencies": {
