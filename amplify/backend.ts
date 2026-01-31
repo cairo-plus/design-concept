@@ -1,10 +1,10 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/auth-res.ts';
-import { storage } from './storage/resource';
-import { data } from './data/resource';
-import { processBedrock } from './functions/process-bedrock/resource';
-import { chunkDocuments } from './functions/chunk-documents/resource';
-import { ragChat } from './functions/rag-chat/resource';
+import { storage } from './storage/resource.ts';
+import { data } from './data/resource.ts';
+import { processBedrock } from './functions/process-bedrock/resource.ts';
+import { chunkDocuments } from './functions/chunk-documents/resource.ts';
+import { ragChat } from './functions/rag-chat/resource.ts';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
