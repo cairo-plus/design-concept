@@ -50,25 +50,23 @@ export default function LoginPage() {
             </header>
 
             <main className="flex items-center justify-center p-4">
-                <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg ring-1 ring-slate-200">
-                    <Authenticator
-                        initialState="signIn"
-                        formFields={{
-                            signIn: {
-                                username: {
-                                    placeholder: 'Enter your Email',
-                                    label: 'Email',
-                                },
-                                password: {
-                                    placeholder: 'Enter your Password',
-                                    label: 'Password',
-                                },
+                <Authenticator
+                    initialState="signIn"
+                    formFields={{
+                        signIn: {
+                            username: {
+                                placeholder: 'Enter your Email',
+                                label: 'Email',
                             },
-                        }}
-                    >
-                        <RedirectHome />
-                    </Authenticator>
-                </div>
+                            password: {
+                                placeholder: 'Enter your Password',
+                                label: 'Password',
+                            },
+                        },
+                    }}
+                >
+                    <RedirectHome />
+                </Authenticator>
             </main>
         </div>
     );
