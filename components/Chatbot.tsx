@@ -137,6 +137,8 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
                         <div className="flex space-x-2">
                             <input
                                 type="text"
+                                id="chat-input"
+                                name="chat-input"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSend()}
