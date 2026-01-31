@@ -5,6 +5,7 @@ import * as pdfLib from "pdf-parse";
 const pdf = (pdfLib as any).default || pdfLib;
 
 import * as XLSX from "xlsx";
+import axios from "axios";
 
 // Clients
 const s3Client = new S3Client({});
