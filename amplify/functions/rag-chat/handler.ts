@@ -1,8 +1,10 @@
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import pdf from "pdf-parse";
+// Robust import for pdf-parse (handles CJS/ESM interop issues)
+import * as pdfLib from "pdf-parse";
+const pdf = (pdfLib as any).default || pdfLib;
+
 import * as XLSX from "xlsx";
-import axios from "axios";
 
 // Clients
 const s3Client = new S3Client({});
@@ -27,18 +29,15 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     const bucketName = process.env.BUCKET_NAME;
 
     if (!bucketName) {
-        throw new Error("Bucket name not found in environment variables");
+        return { answer: "Configuration Error: BUCKET_NAME is missing.", citations: [] };
     }
 
     try {
         // 1. Fetch relevant files from S3
-        // For this demo, we'll blindly fetch all "uploadedDocs" from the 'public/' prefix
-        // In a real app, you'd search a vector DB. Here we do "Context Stuffing".
         let context = "";
         const citations: string[] = [];
+        const debugLogs: string[] = [];
 
-        // List all files in public/ to find matching keys for the uploadedDocs names
-        // This is inefficient but functional for small demos
         const listCommand = new ListObjectsV2Command({
             Bucket: bucketName,
             Prefix: "public/",
@@ -46,14 +45,9 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         const listResponse = await s3Client.send(listCommand);
         const allFiles = listResponse.Contents || [];
 
-        // Filter files that match the requested documents
-        // Heuristic: If uploadedDocs contains "MyPlan.pdf", look for public/.../MyPlan.pdf
         const relevantFiles = allFiles.filter(file =>
             file.Key && uploadedDocs.some(docName => file.Key!.includes(docName))
         );
-
-        // If no specific docs requested or none found, maybe fallback to all? 
-        // Let's stick to only what's requested to be precise.
 
         console.log(`Found ${relevantFiles.length} relevant files in S3.`);
 
@@ -75,8 +69,15 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
                 if (file.Key.endsWith(".pdf")) {
                     const buffer = Buffer.from(byteArray);
-                    const data = await pdf(buffer);
-                    textContent = data.text;
+                    // Use the robust pdf function
+                    try {
+                        const data = await pdf(buffer);
+                        textContent = data.text;
+                    } catch (parseError: any) {
+                        console.error("PDF Parse Error:", parseError);
+                        debugLogs.push(`Failed to parse ${file.Key}: ${parseError.message}`);
+                        continue;
+                    }
                 } else if (file.Key.endsWith(".xlsx")) {
                     const workbook = XLSX.read(byteArray, { type: "buffer" });
                     const sheetName = workbook.SheetNames[0];
@@ -87,13 +88,13 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
                     textContent = Buffer.from(byteArray).toString('utf-8');
                 }
 
-                // Limit context size per file just in case
                 const truncatedText = textContent.slice(0, 50000);
                 context += `\n--- Document: ${file.Key} ---\n${truncatedText}\n`;
                 citations.push(file.Key.split('/').pop() || file.Key);
 
-            } catch (e) {
+            } catch (e: any) {
                 console.error(`Error processing file ${file.Key}:`, e);
+                debugLogs.push(`Error reading ${file.Key}: ${e.message}`);
             }
         }
 
@@ -101,8 +102,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         const systemPrompt = `You are a helpful design assistant. 
     Answer the user's question using ONLY the provided context documents.
     If the answer is explicitly found in the documents, cite the document name.
-    If the answer is NOT found in the documents, invoke the <search_needed/> tag.
-    Do NOT make up information.
+    If the answer is NOT found in the documents, and context was provided, invoke the <search_needed/> tag.
+    If NO context was provided, answer from your general knowledge but mention that no documents were found.
     
     Current Date: ${new Date().toISOString()}
     `;
@@ -135,19 +136,16 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
         let answer = responseBody.content[0].text;
 
-        // 3. Check for Internet Search Fallback
-        if (answer.includes("<search_needed/>") || context.length === 0) {
-            console.log("Fallback to internet search triggered.");
-            // Perform search
-            // Note: For this demo, we'll simulate a search or use a free API if configured.
-            // Since we don't have a guaranteed API key for Tavily in the prompt history,
-            // we will fallback to a "Simulated Search used for Plan" message or try to use Bedrock's internal knowledge without context constraint.
+        // 3. Fallback / "Internet Search" Simulation
+        // If the model says search is needed, we interpret that as "Not in docs".
+        // Since we don't have a real search API hooked up, we fall back to internal knowledge.
+        if (answer.includes("<search_needed/>")) {
+            console.log("Fallback to general knowledge triggered.");
 
-            // Re-prompt Bedrock allowing it to use internal knowledge or simulating search result
             const fallbackPrompt = `You are a helpful assistant. The user asked: "${query}".
         You previously couldn't find the answer in the provided files.
-        Now, please answer using your general knowledge. 
-        Note that you are acting as an AI assistant that can search the internet, so you can say "I searched the internet and found..."
+        Please answer using your general knowledge.
+        IMPORTANT: Start your response with "【ウェブ検索（シミュレーション）】" to indicate this is general knowledge, not from the files.
         `;
 
             const fallbackPayload = {
@@ -169,9 +167,17 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             const fallbackBody = JSON.parse(new TextDecoder().decode(fallbackResponse.body));
             answer = fallbackBody.content[0].text;
 
-            // Clear citations as it came from "Internet/General Knowledge"
-            // Or keep them empty
-            citations.push("Internet Search (Simulated)");
+            // Clear file citations, add simulation note
+            citations.splice(0, citations.length);
+            citations.push("General Knowledge (No matching file content)");
+        }
+
+        // Append debug logs if answer is empty or error-like, for visibility during dev
+        if (!answer) {
+            answer = "Generated answer was empty.";
+            if (debugLogs.length > 0) {
+                answer += "\n\nDebug Logs:\n" + debugLogs.join("\n");
+            }
         }
 
         return {
@@ -179,10 +185,11 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             citations
         };
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Handler error:", error);
+        // RETURN the error as the answer so it's visible in the UI
         return {
-            answer: "Sorry, an error occurred while processing your request.",
+            answer: `System Error: ${error.message}\n\nPlease check logs.`,
             citations: []
         };
     }
