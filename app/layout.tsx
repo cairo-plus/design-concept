@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 // import { Geist, Geist_Mono } from "next/font/google"; // Using generic fonts or matching bomy-front global css
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
+import ConfigureAmplify from "@/components/ConfigureAmplify";
 
 export const metadata: Metadata = {
   title: "Design Concept Generator",
@@ -17,10 +18,12 @@ export default function RootLayout({
     <html lang="ja">
       {/* bomy-front matches globals.css text-slate-800 bg-gray-100 */}
       <body className="antialiased min-h-screen bg-gray-50 text-slate-800">
+        <ConfigureAmplify />
         <AuthProvider>
           {children}
         </AuthProvider>
       </body>
+
     </html>
   );
 }

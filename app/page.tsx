@@ -28,7 +28,7 @@ export interface UploadedFile {
 }
 
 export default function Dashboard() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
 
   // State for file uploads - updated to store full metadata
@@ -194,7 +194,7 @@ export default function Dashboard() {
         <div className="relative mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-white/20 px-4 py-2 text-base font-semibold tracking-wide shadow-inner">
-              design
+              bomy
             </span>
             <div className="leading-tight">
               <p className="text-lg font-semibold">設計構想書自動生成システム</p>
@@ -205,7 +205,7 @@ export default function Dashboard() {
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3 text-sm justify-end text-right">
             <div className="leading-tight">
-              <p className="font-semibold">User</p>
+              <p className="font-semibold">{user?.signInDetails?.loginId || user?.username || "User"}</p>
               <p className="text-[11px] text-sky-50/90">ログイン中</p>
             </div>
           </div>

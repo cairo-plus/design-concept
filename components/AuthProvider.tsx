@@ -28,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const listener = Hub.listen('auth', (data: any) => {
             switch (data.payload.event) {
                 case 'signedIn':
+                    setIsLoading(true);
                     checkAuthStatus();
                     break;
                 case 'signedOut':
