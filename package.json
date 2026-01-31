@@ -15,6 +15,7 @@
     "aws-amplify": "^6.16.0",
     "axios": "^1.13.4",
     "next": "14.2.23",
+    "pdf-parse": "^1.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "xlsx": "^0.18.5"
@@ -24,6 +25,7 @@
     "@aws-amplify/backend-cli": "^1.8.2",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20.0.0",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
     "eslint": "^8.0.0",
