@@ -1,5 +1,5 @@
 import { defineBackend } from '@aws-amplify/backend';
-import { auth } from './auth/auth-res.ts';
+import { auth } from './auth/resource.ts';
 import { storage } from './storage/resource.ts';
 import { data } from './data/resource.ts';
 import { processBedrock } from './functions/process-bedrock/resource.ts';
