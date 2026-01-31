@@ -6,11 +6,12 @@
 
 このアプリケーションは、以下の機能を提供します：
 
-- **ドキュメントアップロード**: 設計構想書、商品企画書、製品企画書などの入力資料をアップロード
+- **ドキュメントアップロード**: 設計構想書、商品企画書、製品企画書などの入力資料をアップロード (S3)
 - **コンポーネント選択**: テールゲート、フロントバンパー、フードなどの対象コンポーネントを選択
-- **設計構想書生成**: アップロードされた資料から設計構想書を自動生成
+- **Real RAG 生成**: アップロードされた資料の中身を解析し、AWS Bedrock (Claude 3.5 Sonnet) を使用して設計構想書を自動生成
+- **引用付きチャットボット**: アップロード資料に基づいた回答と、その根拠となる資料名の明示
+- **インターネット検索フォールバック**: 資料にない情報はインターネット（シミュレーション）から補完
 - **認証機能**: AWS Amplify による安全なユーザー認証
-- **チャットボット**: インタラクティブなチャットボットサポート
 
 ## 🚀 技術スタック
 
@@ -121,6 +122,30 @@ GitHubリポジトリにプッシュし、Amplify ConsoleまたはVercelでリ�
 - `@aws-amplify/ui-react`: Amplify UI コンポーネント
 - `tailwindcss`: CSS フレームワーク
 - `typescript`: TypeScript
+
+## 🏗️ アーキテクチャ (Real RAG)
+
+```mermaid
+graph TD
+    User[User] -->|Uploads File| UX[Next.js Frontend]
+    UX -->|Saves to| S3[S3 Bucket]
+    User -->|Asks Question| UX
+    UX -->|Calls| AppSync[AppSync API]
+    AppSync -->|Invokes| Lambda[Lambda (rag-chat)]
+    Lambda -->|Reads| S3
+    Lambda -->|Extracts Text| Parser[PDF/Excel Parser]
+    Lambda -->|Generates Answer| Bedrock[AWS Bedrock (Claude 3.5 Sonnet)]
+    Bedrock -->|Returns| Lambda
+    Lambda -->|Response + Citations| UX
+```
+
+### RAG (Retrieval-Augmented Generation) フロー
+1.  ユーザーが資料をアップロード (S3 `public/` フォルダ)
+2.  チャットまたは生成ボタン押下時に、Lambda関数が起動
+3.  LambdaがS3から関連ファイルをダウンロードし、テキストを抽出 (Context Stuffing)
+4.  抽出されたテキストと質問を Bedrock (Claude 3.5 Sonnet) に送信
+5.  情報が見つからない場合は、インターネット検索モード（シミュレーション）にフォールバック
+6.  回答とともに、参照したファイル名を引用として返却
 
 ## 🌐 デプロイ
 
