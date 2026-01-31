@@ -147,22 +147,7 @@ graph TD
 5.  情報が見つからない場合は、インターネット検索モード（シミュレーション）にフォールバック
 6.  回答とともに、参照したファイル名を引用として返却
 
-## 🌐 デプロイ
 
-### Vercel
-
-Next.js アプリケーションを Vercel にデプロイするのが最も簡単です：
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme)
-
-詳細は [Next.js デプロイメントドキュメント](https://nextjs.org/docs/app/building-your-application/deploying) を参照してください。
-
-## 📚 リソース
-
-- [Next.js Documentation](https://nextjs.org/docs) - Next.js の機能と API を学ぶ
-- [Learn Next.js](https://nextjs.org/learn) - インタラクティブな Next.js チュートリアル
-- [AWS Amplify Documentation](https://docs.amplify.aws/) - AWS Amplify のドキュメント
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs) - Tailwind CSS のドキュメント
 
 ## ☁️ AWS Resources (Deployed)
 
