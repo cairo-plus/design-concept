@@ -9,5 +9,8 @@ export const storage = defineStorage({
         'public/*': [
             allow.authenticated.to(['read', 'write']),
         ],
+        'protected/*': [
+            allow.authenticated.to(['read', 'write']),
+        ],
     })
 });
