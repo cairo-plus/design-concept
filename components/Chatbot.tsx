@@ -42,12 +42,18 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
             const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.name);
 
             // Call the RAG backend
+            console.log("Sending RAG query:", { query: userMessage, uploadedDocs: allUploadedDocs });
             const response = await client.queries.ragChat({
                 query: userMessage,
                 uploadedDocs: allUploadedDocs.length > 0 ? allUploadedDocs : undefined
             });
+            console.log("RAG Response:", response);
 
-            const answer = response.data?.answer || "申し訳ありません。回答を生成できませんでした。";
+            if (response.errors) {
+                console.error("RAG Backend Errors:", response.errors);
+            }
+
+            const answer = response.data?.answer || "申し訳ありません。回答を生成できませんでした。(Response data is empty)";
             const citations = response.data?.citations?.filter((c): c is string => c !== null) || [];
 
             setMessages((prev) => [
