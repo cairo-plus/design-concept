@@ -5,4 +5,5 @@ export const ragChat = defineFunction({
     entry: './handler.ts',
     timeoutSeconds: 60, // Bedrock might take time
     memoryMB: 512, // PDF parsing might need memory
+    resourceGroupName: 'data',
 });

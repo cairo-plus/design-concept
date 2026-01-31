@@ -15,4 +15,6 @@ export const chunkDocuments = defineFunction((scope) => {
         timeout: Duration.minutes(5),
         memorySize: 512,
     });
+}, {
+    resourceGroupName: 'storage'
 });
