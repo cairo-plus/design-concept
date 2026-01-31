@@ -2,8 +2,12 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Amplify } from "aws-amplify";
 import { getCurrentUser, signOut, fetchAuthSession } from "aws-amplify/auth";
 import { Hub } from "aws-amplify/utils";
+import outputs from "@/amplify_outputs.json";
+
+Amplify.configure(outputs);
 
 interface AuthContextType {
     isAuthenticated: boolean;
