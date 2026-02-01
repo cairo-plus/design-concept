@@ -68,7 +68,7 @@ export default function Dashboard() {
         INPUT_DOCS.forEach(doc => newState[doc] = []);
 
         items.forEach(item => {
-          if (newState[item.docType]) {
+          if (newState[item.docType] && !item.isDeleted) {
             newState[item.docType].push({
               name: item.fileName,
               path: item.s3Path,

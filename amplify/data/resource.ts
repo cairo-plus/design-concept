@@ -12,6 +12,7 @@ const schema = a.schema({
         fileName: a.string().required(),
         s3Path: a.string().required(),
         uploadedAt: a.string(),
+        isDeleted: a.boolean(),
     })
         .authorization(allow => [allow.owner()]),
 
