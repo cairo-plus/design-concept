@@ -374,13 +374,31 @@ If specific data is not found, infer reasonable engineering defaults or state "N
       if (!success) throw lastError || new Error("Failed after retries");
 
       const jsonString = response?.data?.answer || "{}";
-      // Sanitize string if LLM adds markdown blocks
-      const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+      console.log("Raw Bedrock response:", jsonString.substring(0, 500)); // Log first 500 chars
 
-      const data: DesignConceptData = JSON.parse(cleanJson);
+      // Sanitize string if LLM adds markdown blocks or extra text
+      let cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
 
-      // Fallback if parsing works but some fields missing?
-      if (!data.sections) throw new Error("Invalid JSON structure");
+      // Try to extract JSON if there's extra text
+      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanJson = jsonMatch[0];
+      }
+
+      let data: DesignConceptData;
+      try {
+        data = JSON.parse(cleanJson);
+      } catch (parseError) {
+        console.error("JSON Parse Error:", parseError);
+        console.error("Attempted to parse:", cleanJson.substring(0, 1000));
+        throw new Error(`Invalid JSON structure: ${(parseError as Error).message}. Response may not be properly formatted.`);
+      }
+
+      // Validate required structure
+      if (!data.sections) {
+        console.error("Missing 'sections' in parsed data:", data);
+        throw new Error("Invalid JSON structure: Missing 'sections' field");
+      }
 
       setGeneratedData(data);
 
