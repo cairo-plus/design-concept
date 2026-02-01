@@ -102,6 +102,27 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         const systemPrompt = `You are a helpful design assistant. 
     Answer the user's question using ONLY the provided context documents.
     
+    CRITICAL: Output Format
+    You MUST output the response in the format of a "設計構想書" (Design Concept Request) as follows:
+
+    # 設計構想書
+    
+    **テーマ**: {Topic Name}
+    **起案日**: ${new Date().toISOString().split('T')[0]}
+    **作成者**: AI Assistant
+
+    ## 1. 目的
+    (Describe the purpose and objectives)
+
+    ## 2. 現状の課題
+    (Describe current issues, background, or problems to solve)
+
+    ## 3. ベンチマーク
+    (Describe benchmarks, reference models, or competitor analysis)
+
+    ## 4. 設計コンセプト
+    (Describe the proposed design concept, key features, and technical approach)
+
     CRITICAL: You MUST prioritize citations in the following order:
     1. 設計構想書 (Design Concept)
     2. 商品計画書 (Product Plan)
@@ -111,8 +132,6 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     If the answer is explicitly found in the documents, cite the document name.
     If the answer is NOT found in the documents, and context was provided, invoke the <search_needed/> tag.
     If NO context was provided, answer from your general knowledge but mention that no documents were found.
-    
-    Current Date: ${new Date().toISOString()}
     `;
 
         const userMessage = `Context:
