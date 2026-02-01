@@ -37,29 +37,45 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     }
 
     try {
-        // 1. Fetch relevant files from S3
+        // 1. Fetch relevant files using chunks
         let context = "";
         const citations: string[] = [];
         const debugLogs: string[] = [];
 
+        // We look in "protected/" for processed files (chunks.json)
         const listCommand = new ListObjectsV2Command({
             Bucket: bucketName,
-            Prefix: "public/",
+            Prefix: "protected/",
         });
         const listResponse = await s3Client.send(listCommand);
         const allFiles = listResponse.Contents || [];
 
-        const relevantFiles = allFiles.filter(file =>
-            file.Key && uploadedDocs.some(docName => file.Key!.includes(docName))
-        );
+        // Filter for files directly matching the uploaded docs but with _chunks.json suffix
+        // The structure is protected/{docType}/{timestamp}/{filename}_chunks.json
+        // But uploadedDocs provides the filename (e.g., "A.pdf").
+        // We need to match if the S3 key *contains* the filename + "_chunks.json" inside.
 
-        console.log(`Found ${relevantFiles.length} relevant files in S3.`);
+        const relevantFiles = allFiles.filter(file => {
+            if (!file.Key || !file.Key.endsWith("_chunks.json")) return false;
+
+            // Check if any uploaded doc name matches the key
+            // Example: file.Key = "protected/Plan/TIME/MyDoc_chunks.json"
+            // uploadedDoc = "MyDoc.pdf" -> we match "MyDoc"
+
+            return uploadedDocs.some(docName => {
+                // Remove extension to match base name
+                const baseName = docName.substring(0, docName.lastIndexOf('.')) || docName;
+                return file.Key!.includes(baseName);
+            });
+        });
+
+        console.log(`Found ${relevantFiles.length} processed chunk files in S3 (protected/).`);
 
         for (const file of relevantFiles) {
             if (!file.Key) continue;
 
             try {
-                console.log(`Processing file: ${file.Key}`);
+                console.log(`Processing chunk file: ${file.Key}`);
                 const getCommand = new GetObjectCommand({
                     Bucket: bucketName,
                     Key: file.Key,
@@ -68,36 +84,27 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
                 if (!response.Body) continue;
 
-                const byteArray = await response.Body.transformToByteArray();
-                let textContent = "";
+                const jsonStr = await response.Body.transformToString();
+                const chunks = JSON.parse(jsonStr);
 
-                if (file.Key.endsWith(".pdf")) {
-                    const buffer = Buffer.from(byteArray);
-                    // Use the robust pdf function
-                    try {
-                        const data = await pdf(buffer);
-                        textContent = data.text;
-                    } catch (parseError: any) {
-                        console.error("PDF Parse Error:", parseError);
-                        debugLogs.push(`Failed to parse ${file.Key}: ${parseError.message}`);
-                        continue;
-                    }
-                } else if (file.Key.endsWith(".xlsx")) {
-                    const workbook = XLSX.read(byteArray, { type: "buffer" });
-                    const sheetName = workbook.SheetNames[0];
-                    const sheet = workbook.Sheets[sheetName];
-                    textContent = XLSX.utils.sheet_to_csv(sheet);
-                } else {
-                    // Text fallback
-                    textContent = Buffer.from(byteArray).toString('utf-8');
+                // Concatenate text from all chunks
+                let fileText = "";
+                if (Array.isArray(chunks)) {
+                    fileText = chunks.map((c: any) => {
+                        const header = c.metadata?.heading ? `[${c.metadata.heading}] ` : "";
+                        return `${header}${c.text}`;
+                    }).join("\n\n");
                 }
 
-                const truncatedText = textContent.slice(0, 50000);
+                const truncatedText = fileText.slice(0, 50000);
                 context += `\n--- Document: ${file.Key} ---\n${truncatedText}\n`;
-                citations.push(file.Key.split('/').pop() || file.Key);
+
+                // Citation logic: extract original filename from Key or use Key
+                const citationName = file.Key.split('/').pop()?.replace('_chunks.json', '') || file.Key;
+                citations.push(citationName);
 
             } catch (e: any) {
-                console.error(`Error processing file ${file.Key}:`, e);
+                console.error(`Error processing chunk file ${file.Key}:`, e);
                 debugLogs.push(`Error reading ${file.Key}: ${e.message}`);
             }
         }

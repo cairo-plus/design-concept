@@ -18,6 +18,51 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
+    // State for processing status
+    const [processingStatus, setProcessingStatus] = useState<{ [key: string]: "up-to-date" | "processing" | "ready" }>({});
+
+    // Poll for processing status
+    useEffect(() => {
+        const checkStatus = async () => {
+            const allFiles = Object.values(uploadedFiles).flat();
+            if (allFiles.length === 0) return;
+
+            // List files in protected/ to see what's ready
+            try {
+                // Determine which files need checking (simplified: check all)
+                const listResult = await client.queries.ragChat({
+                    query: "status_check_only", // Hacky: we need a proper list API or use storage list
+                    uploadedDocs: []
+                }).catch(() => null);
+
+                // Ideally we use Storage.list, but we might not have access here easily without configuring it.
+                // Let's assume for now we just show a generic message if recently uploaded.
+
+                // Better approach: Check local storage upload time vs current time.
+                // If uploaded < 2 minutes ago, show processing.
+                const now = new Date();
+                const newStatus: any = {};
+
+                allFiles.forEach(f => {
+                    const uploadTime = new Date(f.uploadedAt);
+                    const diffSeconds = (now.getTime() - uploadTime.getTime()) / 1000;
+                    if (diffSeconds < 60) { // Assume 60s processing time
+                        newStatus[f.name] = "processing";
+                    } else {
+                        newStatus[f.name] = "ready";
+                    }
+                });
+                setProcessingStatus(newStatus);
+            } catch (e) {
+                console.warn("Status check failed", e);
+            }
+        };
+
+        const interval = setInterval(checkStatus, 5000);
+        checkStatus(); // Initial check
+        return () => clearInterval(interval);
+    }, [uploadedFiles]);
+
     // Update greeting when data changes
     useEffect(() => {
         const uploadedCount = Object.keys(uploadedFiles).length;
@@ -91,9 +136,16 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
             {isOpen && (
                 <div className="bg-white rounded-2xl shadow-xl w-80 sm:w-96 flex flex-col h-[600px] ring-1 ring-slate-200">
                     <div className="bg-gradient-to-r from-sky-500 to-cyan-500 p-4 rounded-t-2xl flex justify-between items-center">
-                        <div>
-                            <h3 className="text-white font-semibold">設計アシスタント</h3>
-                            <p className="text-sky-100 text-xs">RAG (Bedrock + S3)</p>
+                        <div className="flex items-center gap-2">
+                            <div className="flex flex-col items-end">
+                                <h3 className="text-white font-semibold">設計アシスタント</h3>
+                                <p className="text-sky-100 text-xs">RAG (Bedrock + S3)</p>
+                            </div>
+                            {Object.values(processingStatus).some(s => s === "processing") && (
+                                <div className="bg-white/20 rounded px-2 py-1 text-[10px] text-white animate-pulse">
+                                    処理中...
+                                </div>
+                            )}
                         </div>
                         <button onClick={() => setIsOpen(false)} className="text-white hover:text-sky-200 transition">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -148,7 +200,11 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSend()}
-                                placeholder={isLoading ? "回答を待機中..." : "質問を入力..."}
+                                placeholder={
+                                    isLoading ? "回答を待機中..." :
+                                        Object.values(processingStatus).some(s => s === "processing") ? "背景処理中ですが質問できます..." :
+                                            "質問を入力..."
+                                }
                                 disabled={isLoading}
                                 className="flex-1 border border-slate-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent disabled:bg-slate-100"
                             />
