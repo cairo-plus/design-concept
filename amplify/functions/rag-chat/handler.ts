@@ -1,3 +1,4 @@
+import "./polyfill"; // Must be imported first to ensure DOMMatrix is defined
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 // Robust import for pdf-parse (handles CJS/ESM interop issues)
