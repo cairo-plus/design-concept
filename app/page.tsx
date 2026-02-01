@@ -124,6 +124,7 @@ export default function Dashboard() {
             fileName: file.name,
             s3Path: path,
             uploadedAt: new Date().toISOString(),
+            isDeleted: false,
           });
 
           newFiles.push({
