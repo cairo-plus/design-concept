@@ -24,7 +24,7 @@ const backend = defineBackend({
 const bucket = backend.storage.resources.bucket;
 const { cfnBucket } = backend.storage.resources.cfnResources;
 
-import { Function } from 'aws-cdk-lib/aws-lambda';
+import { Function, FunctionUrlAuthType, HttpMethod } from 'aws-cdk-lib/aws-lambda';
 // ...
 // Grant permissions to ragChat
 const ragChatLambda = backend.ragChat.resources.lambda as Function;
@@ -80,4 +80,21 @@ bucket.addEventNotification(
     new s3n.LambdaDestination(chunkDocumentsLambda),
     { prefix: 'protected/', suffix: '.md' }
 );
+
+// Add Function URL to ragChat for Streaming
+const ragChatUrl = ragChatLambda.addFunctionUrl({
+    authType: FunctionUrlAuthType.NONE, // WARNING: Publicly accessible. Use IAM in production.
+    cors: {
+        allowedOrigins: ['*'], // For dev/sandbox. Lock down in prod.
+        allowedMethods: [HttpMethod.POST],
+        allowedHeaders: ['*'],
+        exposedHeaders: ['x-amz-request-id'] // Useful for debugging
+    }
+});
+
+import { CfnOutput } from 'aws-cdk-lib';
+new CfnOutput(backend.stack, 'RagChatFunctionUrl', {
+    value: ragChatUrl.url,
+    description: 'Function URL for RAG Chat Streaming',
+});
 

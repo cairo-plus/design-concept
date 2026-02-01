@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "@/amplify/data/resource";
+import { streamRagChat } from "../hooks/useRagStream";
 
 const client = generateClient<Schema>();
 
@@ -77,6 +78,7 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
         }
     }, [uploadedFiles]);
 
+
     const handleSend = async () => {
         if (!input.trim()) return;
         const userMessage = input.trim();
@@ -85,52 +87,58 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
         setInput("");
         setIsLoading(true);
 
+        // Add placeholder bot message
+        setMessages((prev) => [...prev, { role: "bot", content: "" }]);
+
         try {
             // Collect all uploaded file names to serve as context scope
             const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.name);
 
-            // Call the RAG backend
-            console.log("Sending RAG query:", { query: userMessage, uploadedDocs: allUploadedDocs });
-            const response = await client.queries.ragChat({
-                query: userMessage,
-                uploadedDocs: allUploadedDocs.length > 0 ? allUploadedDocs : undefined
-            });
-            console.log("RAG Response:", response);
+            console.log("Starting Stream:", { query: userMessage });
 
-            if (response.errors) {
-                console.error("RAG Backend Errors:", response.errors);
-            }
+            let fullText = "";
 
-            const answer = response.data?.answer || "申し訳ありません。回答を生成できませんでした。(Response data is empty)";
-            const citations = response.data?.citations?.filter((c): c is string => c !== null) || [];
-
-            setMessages((prev) => [
-                ...prev,
-                {
-                    role: "bot",
-                    content: answer,
-                    citations: citations
-                },
-            ]);
-
-            // Save interaction history
-            try {
-                await client.models.InteractionHistory.create({
-                    type: "CHAT",
-                    query: userMessage,
-                    response: answer,
-                    usedSources: citations,
-                    createdAt: new Date().toISOString()
+            await streamRagChat(userMessage, allUploadedDocs, (chunk: string) => {
+                fullText += chunk;
+                setMessages((prev) => {
+                    const newArr = [...prev];
+                    const lastIdx = newArr.length - 1;
+                    if (newArr[lastIdx].role === "bot") {
+                        newArr[lastIdx] = { ...newArr[lastIdx], content: fullText };
+                    }
+                    return newArr;
                 });
-            } catch (saveError) {
-                console.error("Failed to save chat history", saveError);
+            });
+
+            // Save interaction history (after stream completes)
+            if (fullText) {
+                try {
+                    await client.models.InteractionHistory.create({
+                        type: "CHAT",
+                        query: userMessage,
+                        response: fullText,
+                        usedSources: [], // Citations are now embedded in text
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (saveError) {
+                    console.error("Failed to save chat history", saveError);
+                }
             }
-        } catch (error) {
+
+        } catch (error: any) {
             console.error("Chat error:", error);
-            setMessages((prev) => [
-                ...prev,
-                { role: "bot", content: "エラーが発生しました。もう一度お試しください。" },
-            ]);
+            setMessages((prev) => {
+                const newArr = [...prev];
+                // If the last message was the empty bot message, update it with error
+                const lastIdx = newArr.length - 1;
+                if (newArr[lastIdx].role === "bot") {
+                    newArr[lastIdx] = {
+                        ...newArr[lastIdx],
+                        content: prev[lastIdx].content + `\n\n(Error: ${error.message || "Connection failed"})`
+                    };
+                }
+                return newArr;
+            });
         } finally {
             setIsLoading(false);
         }

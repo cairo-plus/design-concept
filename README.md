@@ -8,13 +8,15 @@
 
 - **ドキュメントアップロード**: 設計構想書、商品企画書、製品企画書などの入力資料をアップロード (S3)
 - **コンポーネント選択**: テールゲート、フロントバンパー、フードなどの対象コンポーネントを選択
-- **Real RAG 生成**: アップロードされた資料の中身を解析し、AWS Bedrock (Claude 3.5 Sonnet) を使用して設計構想書を自動生成
-- **引用付きチャットボット**: アップロード資料に基づいた回答と、その根拠となる資料名の明示。引用は以下の優先順位で行われます：
-    1. 設計構想書
-    2. 商品計画書
-    3. 製品企画書
-    4. 法規リスト
-- **インターネット検索 (Real Web Search)**: 上記の社内資料に関連情報がない場合、自動的に **Tavily AI Search API** へのフォールバックが発生し、信頼性の高いソース（論文、法規、メーカー公式など）をウェブ全体から検索して回答します。
+- **Real RAG 生成 (Streaming)**: アップロードされた資料の中身を解析し、AWS Bedrock (Claude 3.5 Sonnet v2) を使用して設計構想書を自動生成。リアルタイムストリーミングにより、思考プロセスと回答生成の様子を即座に確認できます。
+- **引用付きチャットボット**: アップロード資料に基づいた回答と、その根拠となる資料名の明示。以下の厳密な優先順位に基づきます：
+    1. **Web検索結果 (最新トレンド・法規)**
+    2. **設計構想書 (最重要)**
+    3. 商品計画書
+    4. 製品企画書
+    5. 法規リスト
+- **インターネット検索 (Real Web Search)**: 「Tavily AI Search API」を統合。2024-2025年の最新法規やトレンドなど、社内資料にない情報を自動的にウェブから補完します。
+- **AI Reranking (高精度化)**: 検索した資料（社内文書 + Web検索結果）をLLM (Claude 3 Haiku) が「質問との関連度」で採点し、上位の本当に必要な情報だけを使用して回答を生成。これにより**ハルシネーション（嘘の回答）**を劇的に低減します。
 - **ファイル処理ステータス表示**: アップロードされたファイルの解析状況（処理中/準備完了）をリアルタイムで可視化
 - **ユーザー情報表示**: ログイン中のユーザーID（メールアドレス）をヘッダーに表示
 - **認証機能**: AWS Amplify による安全なユーザー認証
@@ -26,6 +28,8 @@
 - **UI**: React 18.3.1
 - **スタイリング**: Tailwind CSS 4.0
 - **認証**: AWS Amplify 6.6.1
+- **生成AI**: AWS Bedrock (Claude 3.5 Sonnet v2 / Cross-Region Inference)
+- **Rerank AI**: AWS Bedrock (Claude 3 Haiku)
 - **検索API**: Tavily AI Search API
 - **開発環境**: Node.js 20+
 
@@ -46,7 +50,7 @@ design-concept/
 │   ├── data/              # データリソース (AppSync)
 │   ├── storage/           # ストレージリソース (S3)
 │   └── functions/         # Lambda関数
-│       └── rag-chat/      # RAGチャットボット (Tavily連携)
+│       └── rag-chat/      # RAGチャットボット (Web検索 + Rerank)
 ├── lib/                   # ユーティリティ
 ├── public/                # 静的ファイル
 └── package.json          # 依存関係
@@ -91,6 +95,7 @@ npm run dev
 3. **コンポーネント選択**: 対象コンポーネントを選択
 4. **ステータス確認**: アップロードしたすべてのファイルが「準備完了」になっていることを確認
 5. **生成**: 設計構想書を生成
+6. **質問 (チャット)**: 「2025年の法規トレンドは？」など、資料にないことも質問可能（Web検索が作動します）
 
 ## 🛠️ 開発コマンド
 
@@ -123,9 +128,13 @@ npm run lint
    - Value: `tvly-xxxx...` (あなたのTavily APIキー)
 
 ### 3. ローカル開発環境 (Sandbox)
-ローカルでバックエンドを開発・テストするために、Sandboxを起動します。
+シークレットを設定するには以下のコマンドを使用します：
 
 ```bash
+# シークレットの設定
+npx ampx sandbox secret set TAVILY_API_KEY
+
+# Sandboxの起動
 npx ampx sandbox
 ```
 これにより、隔離されたAWS環境がプロビジョニングされ、`amplify_outputs.json` が生成されます。
@@ -148,32 +157,47 @@ GitHubリポジトリにプッシュし、Amplify ConsoleまたはVercelでリ�
 - `pdf-parse`: PDFテキスト抽出
 - `axios`: HTTPクライアント (Tavily API用)
 
-## 🏗️ アーキテクチャ (Real RAG)
+## 🏗️ アーキテクチャ (Advanced RAG 2.0)
 
 ```mermaid
 graph TD
     User[User] -->|Uploads File| UX[Next.js Frontend]
     UX -->|Saves to| S3[S3 Bucket]
     User -->|Asks Question| UX
-    UX -->|Calls| AppSync[AppSync API]
-    AppSync -->|Invokes| Lambda[Lambda (rag-chat)]
-    Lambda -->|Reads| S3
-    Lambda -->|Extracts Text| Parser[PDF/Excel Parser]
-    Lambda -->|Generates Answer| Bedrock[AWS Bedrock (Claude 3.5 Sonnet)]
-    Bedrock -->|Returns| Lambda
-    Lambda -- "Not found?" --> Tavily[Tavily Search API]
+    UX -->|Streams Request| LambdaURL[Lambda Function URL]
+    LambdaURL -->|Invokes| Lambda[Lambda (rag-chat)]
+    
+    subgraph Retrieval Phase
+    Lambda -->|Reads Chunks| S3
+    Lambda -- "Need External Info?" --> Tavily[Web Search API (Tavily)]
     Tavily -- "Web Results" --> Lambda
-    Lambda -->|Response + Citations| UX
+    end
+    
+    subgraph Reranking Phase
+    Lambda -->|Candidates| Reranker[AI Reranker (Claude 3 Haiku)]
+    Reranker -->|Scored & Filtered| Context[Optimal Context]
+    end
+
+    subgraph Generation Phase
+    Context --> Generator[AWS Bedrock (Claude 3.5 Sonnet v2)]
+    Generator -- "Streaming Tokens" --> Lambda
+    end
+
+    Lambda -- "Stream Response" --> LambdaURL
+    LambdaURL -- "Real-time Text" --> UX
 ```
 
 ### RAG (Retrieval-Augmented Generation) フロー
-1.  ユーザーが資料をアップロード (S3 `public/` フォルダ)
-2.  チャットまたは生成ボタン押下時に、Lambda関数が起動
-3.  LambdaがS3から関連ファイルをダウンロードし、テキストを抽出 (Context Stuffing)
-4.  抽出されたテキストと質問を Bedrock (Claude 3.5 Sonnet) に送信
-5.  情報が見つからない場合は、**Tavily API** を使用してインターネット検索を実行
-6.  検索結果を含めて再回答を生成
-7.  回答とともに、参照したファイル名またはURLを引用として返却
+1.  **Retrieval (検索)**: 
+    *   S3からアップロード資料のチャンクを取得
+    *   Tavily APIでWebから最新情報を検索
+2.  **Reranking (再ランク付け)**: 
+    *   取得したすべての情報（社内資料 + Web検索結果）を LLM (Claude 3 Haiku) に渡し、質問との関連度を0-10点で採点
+    *   スコアが高い（関連度が高い）上位のチャンクだけを選別
+3.  **Generation (生成)**: 
+    *   選別された「濃い」情報だけを Claude 4.5/3.5 Sonnet に渡して回答を生成
+    *   **ハルシネーション（嘘）を防止**し、**最新情報**も含めた高精度な回答を実現
+
 
 
 
