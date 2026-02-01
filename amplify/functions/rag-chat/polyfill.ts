@@ -11,8 +11,37 @@ if (typeof global.DOMMatrix === 'undefined') {
     };
 }
 
-// Also polyfill other potential missing browser globals if needed by canvas/pdf-lib
+// Also polyfill other potential missing browser globals
 if (typeof global.TextDecoder === 'undefined') {
     const { TextDecoder } = require('util');
     (global as any).TextDecoder = TextDecoder;
+}
+
+if (typeof global.ImageData === 'undefined') {
+    (global as any).ImageData = class ImageData {
+        width: number;
+        height: number;
+        data: Uint8ClampedArray;
+        constructor(width: number, height: number) {
+            this.width = width;
+            this.height = height;
+            this.data = new Uint8ClampedArray(width * height * 4);
+        }
+    };
+}
+
+if (typeof global.Path2D === 'undefined') {
+    (global as any).Path2D = class Path2D {
+        constructor() { }
+        addPath() { }
+        closePath() { }
+        moveTo() { }
+        lineTo() { }
+        bezierCurveTo() { }
+        quadraticCurveTo() { }
+        arc() { }
+        arcTo() { }
+        ellipse() { }
+        rect() { }
+    };
 }

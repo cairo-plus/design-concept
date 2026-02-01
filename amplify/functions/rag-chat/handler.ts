@@ -1,9 +1,11 @@
 import "./polyfill"; // Must be imported first to ensure DOMMatrix is defined
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-// Robust import for pdf-parse (handles CJS/ESM interop issues)
-import * as pdfLib from "pdf-parse";
-const pdf = (pdfLib as any).default || pdfLib;
+// Robust import for pdf-parse using createRequire to ensure it loads AFTER polyfill
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfLib = require("pdf-parse");
+const pdf = pdfLib.default || pdfLib;
 
 import * as XLSX from "xlsx";
 import axios from "axios";
