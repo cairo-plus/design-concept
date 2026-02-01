@@ -318,7 +318,8 @@ If specific data is not found, infer reasonable engineering defaults or state "N
             <div className="leading-tight">
               <p className="text-lg font-semibold">設計構想書自動生成システム</p>
               <p className="text-xs text-sky-50/90">
-                資料をアップロードして、設計構想書を自動生成 (Real RAG)
+                資料をアップロードして、設計構想書を自動生成
+
               </p>
             </div>
           </div>
@@ -492,7 +493,8 @@ If specific data is not found, infer reasonable engineering defaults or state "N
             {/* Output View */}
             <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 min-h-[500px] flex flex-col">
               <div className="mb-4 inline-flex flex-col text-xl font-semibold uppercase text-sky-700">
-                <span className="fade-in-up">出力: {selectedComponent}</span>
+                <span className="fade-in-up">出力</span>
+
                 <span
                   className="fade-in-up mt-1 h-[3px] w-40 rounded-full bg-sky-700"
                   aria-hidden="true"
@@ -537,7 +539,8 @@ If specific data is not found, infer reasonable engineering defaults or state "N
                             : "bg-sky-600 text-white hover:bg-sky-500"
                             }`}
                         >
-                          構想書を生成 (Real RAG)
+                          構想書を生成
+
                         </button>
                       </>
                     )}

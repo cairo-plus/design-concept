@@ -129,7 +129,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     3. If the context documents do not contain information for a specific section, write "Not mentioned in documents" or equivalent.
     4. This format applies to ANY component or topic (e.g., Tailgate, Seats, Doors, Engine, etc.). Do NOT assume the content involves "Seats" or "Crown Sedan" unless the documents specifically say so.
     
-    CRITICAL: You MUST prioritize citations in the following order:
+     CRITICAL: You MUST prioritize citations in the following order:
     1. 設計構想書 (Design Concept)
     2. 商品計画書 (Product Plan)
     3. 製品企画書 (Product Planning)
@@ -138,6 +138,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     If the answer is explicitly found in the documents, cite the document name.
     If the answer is NOT found in the documents, and context was provided, invoke the <search_needed/> tag.
     If NO context was provided, answer from your general knowledge but mention that no documents were found.
+
+    CRITICAL: You MUST answer in Japanese. Do NOT use English.
     `;
 
         const userMessage = `Context:
@@ -243,6 +245,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
         Review the search results and cite the sources explicitly in your response using the format: [Title](URL).
         Prioritize high-reliability sources (papers, laws, official manufacturers) if available in the results.
+        
+        CRITICAL: You MUST answer in Japanese. Do NOT use English.
         `;
 
             const fallbackPayload = {
