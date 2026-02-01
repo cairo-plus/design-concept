@@ -123,6 +123,12 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     ## 4. 設計コンセプト
     (Describe the proposed design concept, key features, and technical approach)
 
+    CRITICAL RULES FOR CONTENT:
+    1. The structure above is MANDATORY, but the CONTENT must be extracted strictly from the provided context documents.
+    2. Do NOT use any example text or general knowledge to fill these sections unless it exists in the documents.
+    3. If the context documents do not contain information for a specific section, write "Not mentioned in documents" or equivalent.
+    4. This format applies to ANY component or topic (e.g., Tailgate, Seats, Doors, Engine, etc.). Do NOT assume the content involves "Seats" or "Crown Sedan" unless the documents specifically say so.
+    
     CRITICAL: You MUST prioritize citations in the following order:
     1. 設計構想書 (Design Concept)
     2. 商品計画書 (Product Plan)
