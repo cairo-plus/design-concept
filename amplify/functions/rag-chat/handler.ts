@@ -2,6 +2,7 @@
 import "./polyfill";
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import axios from 'axios';
 
 // Clients
 const s3Client = new S3Client({
@@ -100,6 +101,13 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         // 2. Construct Prompt for Bedrock
         const systemPrompt = `You are a helpful design assistant. 
     Answer the user's question using ONLY the provided context documents.
+    
+    CRITICAL: You MUST prioritize citations in the following order:
+    1. 設計構想書 (Design Concept)
+    2. 商品計画書 (Product Plan)
+    3. 製品企画書 (Product Planning)
+    4. 法規リスト (Regulation List)
+    
     If the answer is explicitly found in the documents, cite the document name.
     If the answer is NOT found in the documents, and context was provided, invoke the <search_needed/> tag.
     If NO context was provided, answer from your general knowledge but mention that no documents were found.
@@ -142,16 +150,52 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
         let answer = responseBody.content[0].text;
 
-        // 3. Fallback / "Internet Search" Simulation
+        // 3. Fallback / "Internet Search" Simulation -> REAL Tavily Search
         // If the model says search is needed, we interpret that as "Not in docs".
-        // Since we don't have a real search API hooked up, we fall back to internal knowledge.
         if (answer.includes("<search_needed/>")) {
-            console.log("Fallback to general knowledge triggered.");
+            console.log("Fallback to Internet Search triggered.");
+
+            let searchContext = "";
+            let searchCitations: string[] = [];
+
+            try {
+                // Call Tavily API
+                const tavilyKey = process.env.TAVILY_API_KEY;
+                if (!tavilyKey) {
+                    throw new Error("TAVILY_API_KEY is not set.");
+                }
+
+                const searchResponse = await axios.post("https://api.tavily.com/search", {
+                    api_key: tavilyKey,
+                    query: query,
+                    search_depth: "advanced",
+                    include_answer: true,
+                    max_results: 5
+                });
+
+                const results = searchResponse.data.results || [];
+                const searchAnswer = searchResponse.data.answer || "";
+
+                searchContext = `Tavily Search Summary: ${searchAnswer}\n\nSearch Results:\n` +
+                    results.map((r: any) => `- [${r.title}](${r.url}): ${r.content}`).join("\n");
+
+                // Collect sources for frontend display if needed, though we usually just put them in the text
+                searchCitations = results.map((r: any) => `[${r.title}](${r.url})`);
+
+            } catch (searchError: any) {
+                console.error("Tavily Search failed:", searchError);
+                searchContext = "Internet search failed. Please try again later or check configuration.";
+            }
 
             const fallbackPrompt = `You are a helpful assistant. The user asked: "${query}".
         You previously couldn't find the answer in the provided files.
-        Please answer using your general knowledge.
-        IMPORTANT: Start your response with "【ウェブ検索（シミュレーション）】" to indicate this is general knowledge, not from the files.
+        We performed an internet search and found the following results:
+        
+        ${searchContext}
+
+        Please answer the user's question using ONLY the search results provided above.
+        Review the search results and cite the sources explicitly in your response using the format: [Title](URL).
+        Prioritize high-reliability sources (papers, laws, official manufacturers) if available in the results.
         `;
 
             const fallbackPayload = {
@@ -173,9 +217,11 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             const fallbackBody = JSON.parse(new TextDecoder().decode(fallbackResponse.body));
             answer = fallbackBody.content[0].text;
 
-            // Clear file citations, add simulation note
+            // Clear file citations, replace with search citations or note
             citations.splice(0, citations.length);
-            citations.push("General Knowledge (No matching file content)");
+            // We can push the generic "Internet Search" or specific domains if we want granular chips
+            // For now, let's add a "Internet Search" chip
+            citations.push("Internet Search");
         }
 
         // Append debug logs if answer is empty or error-like, for visibility during dev
