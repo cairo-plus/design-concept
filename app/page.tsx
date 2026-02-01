@@ -568,13 +568,16 @@ If specific data is not found, infer reasonable engineering defaults or state "N
             </div>
           </section>
         </div>
-      </main>
 
-      <Chatbot
-        uploadedFiles={uploadedFiles}
-        selectedComponent={selectedComponent}
-        generatedData={generatedData}
-      />
+        {/* Chatbot Section */}
+        <section className="mt-8">
+          <Chatbot
+            uploadedFiles={uploadedFiles}
+            selectedComponent={selectedComponent}
+            generatedData={generatedData}
+          />
+        </section>
+      </main>
     </div>
   );
 }

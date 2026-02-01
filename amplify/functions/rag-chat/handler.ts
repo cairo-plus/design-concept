@@ -99,35 +99,17 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         }
 
         // 2. Construct Prompt for Bedrock
+        // 2. Construct Prompt for Bedrock
         const systemPrompt = `You are a helpful design assistant. 
     Answer the user's question using ONLY the provided context documents.
     
-    CRITICAL: Output Format
-    You MUST output the response in the format of a "設計構想書" (Design Concept Request) as follows:
-
-    # 設計構想書
-    
-    **テーマ**: {Topic Name}
-    **起案日**: ${new Date().toISOString().split('T')[0]}
-    **作成者**: AI Assistant
-
-    ## 1. 目的
-    (Describe the purpose and objectives)
-
-    ## 2. 現状の課題
-    (Describe current issues, background, or problems to solve)
-
-    ## 3. ベンチマーク
-    (Describe benchmarks, reference models, or competitor analysis)
-
-    ## 4. 設計コンセプト
-    (Describe the proposed design concept, key features, and technical approach)
+    If the user asks for a specific format (e.g., JSON, or a specific document structure), follow their instructions.
+    Otherwise, answer the question in a helpful, professional manner in Japanese.
 
     CRITICAL RULES FOR CONTENT:
-    1. The structure above is MANDATORY, but the CONTENT must be extracted strictly from the provided context documents.
+    1. The CONTENT must be extracted strictly from the provided context documents.
     2. Do NOT use any example text or general knowledge to fill these sections unless it exists in the documents.
     3. If the context documents do not contain information for a specific section, write "Not mentioned in documents" or equivalent.
-    4. This format applies to ANY component or topic (e.g., Tailgate, Seats, Doors, Engine, etc.). Do NOT assume the content involves "Seats" or "Crown Sedan" unless the documents specifically say so.
     
      CRITICAL: You MUST prioritize citations in the following order:
     1. 設計構想書 (Design Concept)
@@ -222,26 +204,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
         Please answer the user's question using ONLY the search results provided above.
         
-        CRITICAL: Output Format
-        You MUST output the response in the format of a "設計構想書" (Design Concept Request) as follows:
-
-        # 設計構想書
-        
-        **テーマ**: {Topic Name}
-        **起案日**: ${new Date().toISOString().split('T')[0]}
-        **作成者**: AI Assistant
-
-        ## 1. 目的
-        (Describe the purpose and objectives based on search results)
-
-        ## 2. 現状の課題
-        (Describe current issues, background, or problems based on search results)
-
-        ## 3. ベンチマーク
-        (Describe benchmarks, reference models, or competitor analysis based on search results)
-
-        ## 4. 設計コンセプト
-        (Describe the proposed design concept, key features, and technical approach based on search results)
+        If the user asks for a specific format in their question, follow it.
+        Otherwise, answer naturally.
 
         Review the search results and cite the sources explicitly in your response using the format: [Title](URL).
         Prioritize high-reliability sources (papers, laws, official manufacturers) if available in the results.
