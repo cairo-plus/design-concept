@@ -219,6 +219,28 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         ${searchContext}
 
         Please answer the user's question using ONLY the search results provided above.
+        
+        CRITICAL: Output Format
+        You MUST output the response in the format of a "設計構想書" (Design Concept Request) as follows:
+
+        # 設計構想書
+        
+        **テーマ**: {Topic Name}
+        **起案日**: ${new Date().toISOString().split('T')[0]}
+        **作成者**: AI Assistant
+
+        ## 1. 目的
+        (Describe the purpose and objectives based on search results)
+
+        ## 2. 現状の課題
+        (Describe current issues, background, or problems based on search results)
+
+        ## 3. ベンチマーク
+        (Describe benchmarks, reference models, or competitor analysis based on search results)
+
+        ## 4. 設計コンセプト
+        (Describe the proposed design concept, key features, and technical approach based on search results)
+
         Review the search results and cite the sources explicitly in your response using the format: [Title](URL).
         Prioritize high-reliability sources (papers, laws, official manufacturers) if available in the results.
         `;
