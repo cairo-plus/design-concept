@@ -21,8 +21,8 @@ const s3Client = new S3Client({
     maxAttempts: 3,
 });
 const bedrockClient = new BedrockRuntimeClient({
-    maxAttempts: 5, // Retry up to 5 times for Bedrock throttling
-    retryMode: "standard",
+    maxAttempts: 3, // Reduced from 5 to prevent excessive retries
+    retryMode: "adaptive", // Use adaptive mode for better backoff
 });
 
 // Types
@@ -81,6 +81,39 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 };
 
 /**
+ * Keyword-based Sorting (No API calls)
+ * Fast alternative to AI reranking for small chunk sets
+ */
+function keywordBasedSort(query: string, chunks: Chunk[]): Chunk[] {
+    const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+
+    const scoredChunks = chunks.map(chunk => {
+        const textLower = chunk.text.toLowerCase();
+        let score = 0;
+
+        // Count keyword matches
+        queryTerms.forEach(term => {
+            const matches = (textLower.match(new RegExp(term, 'g')) || []).length;
+            score += matches;
+        });
+
+        // Boost score based on doc_type priority
+        const docType = chunk.metadata.doc_type || '';
+        const priorityIndex = PRIORITY_ORDER.indexOf(docType);
+        if (priorityIndex !== -1) {
+            score += (PRIORITY_ORDER.length - priorityIndex) * 2;
+        }
+
+        return { ...chunk, metadata: { ...chunk.metadata, score } };
+    });
+
+    // Sort by score descending
+    return scoredChunks
+        .sort((a, b) => (b.metadata.score || 0) - (a.metadata.score || 0))
+        .filter(c => (c.metadata.score || 0) > 0); // Keep only relevant chunks
+}
+
+/**
  * Tavily API for Web Search
  */
 async function searchWeb(query: string): Promise<Chunk[]> {
@@ -137,16 +170,24 @@ async function searchWeb(query: string): Promise<Chunk[]> {
 }
 
 /**
- * LLM-based Reranker
- * Uses Claude 3 Haiku (fast) or Sonnet to score relevance.
+ * Smart Reranker
+ * Uses keyword-based sorting for small sets, AI reranking for larger sets.
  */
 async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
     if (chunks.length === 0) return [];
 
+    // OPTIMIZATION: Use simple keyword sorting for small chunk sets
+    const SMART_RERANK_THRESHOLD = 15;
+
+    if (chunks.length < SMART_RERANK_THRESHOLD) {
+        console.log(`Small chunk set (${chunks.length}). Using keyword-based sorting only.`);
+        return keywordBasedSort(query, chunks);
+    }
+
     // Limited Reranking to save cost/latency: Top 50 chunks max
     const candidates = chunks.slice(0, 50);
 
-    console.log(`Reranking ${candidates.length} chunks...`);
+    console.log(`Large chunk set. AI reranking ${candidates.length} chunks...`);
 
     const prompt = `You are a Relevance Ranking Assistant.
     Query: "${query}"
@@ -335,7 +376,7 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
             }
         });
 
-        // --- 2. Evaluate & Conditional Web Search (CRAG) ---
+        // --- 2. Smart Evaluation & Conditional Web Search (CRAG) ---
         let webChunks: Chunk[] = [];
 
         // Always search if no S3 docs found
@@ -343,12 +384,28 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
         let evalReason = "No internal documents found.";
 
         if (!shouldSearchWeb) {
-            // Evaluate internal docs
-            responseStream.write("Evaluating internal documents...\n"); // User feedback
-            const evaluation = await evaluateRetrieval(query, allChunks);
-            shouldSearchWeb = !evaluation.sufficient;
-            evalReason = evaluation.reason;
-            console.log(`Evaluation: Sufficient=${evaluation.sufficient}, Reason=${evaluation.reason}`);
+            // OPTIMIZATION: Skip expensive AI evaluation if we have good keyword matches
+            const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+            const chunksWithMatches = allChunks.filter(chunk => {
+                const textLower = chunk.text.toLowerCase();
+                return queryTerms.some(term => textLower.includes(term));
+            });
+
+            const SUFFICIENT_CHUNK_THRESHOLD = 10;
+
+            if (chunksWithMatches.length >= SUFFICIENT_CHUNK_THRESHOLD) {
+                // We have plenty of documents with keyword matches - skip AI evaluation
+                console.log(`Sufficient internal documents found (${chunksWithMatches.length} with keyword matches). Skipping CRAG evaluation.`);
+                shouldSearchWeb = false;
+                evalReason = "Sufficient internal documents with keyword matches.";
+            } else {
+                // Evaluate internal docs with AI
+                responseStream.write("Evaluating internal documents...\n"); // User feedback
+                const evaluation = await evaluateRetrieval(query, allChunks);
+                shouldSearchWeb = !evaluation.sufficient;
+                evalReason = evaluation.reason;
+                console.log(`Evaluation: Sufficient=${evaluation.sufficient}, Reason=${evaluation.reason}`);
+            }
         }
 
         if (shouldSearchWeb) {
@@ -406,7 +463,7 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
 
         if (!context) context = "No relevant documents found.";
 
-        // --- 5. Generate with Streaming ---
+        // --- 5. Generate with Streaming (with Prompt Caching) ---
         const systemPrompt = `You are a sophisticated Design Assistant (設計アシスタント). 
     Answer the user's question using the provided context documents.
     
@@ -422,18 +479,39 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
     
     Current Date: ${new Date().toISOString()}`;
 
-        const userMessage = `Context Priority (Top to Bottom):
-    ${context}
-    
-    Question: ${query}`;
+        const contextMessage = `Context Priority (Top to Bottom):
+    ${context}`;
 
         const modelId = "us.anthropic.claude-3-5-sonnet-20241022-v2:0";
 
+        // OPTIMIZATION: Use Prompt Caching for system prompt and context
+        // This can reduce costs by 90% and improve latency on cache hits
         const payload = {
             anthropic_version: "bedrock-2023-05-31",
             max_tokens: 3000,
-            system: systemPrompt,
-            messages: [{ role: "user", content: userMessage }],
+            system: [
+                {
+                    type: "text",
+                    text: systemPrompt,
+                    cache_control: { type: "ephemeral" } // Cache system prompt
+                }
+            ],
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: contextMessage,
+                            cache_control: { type: "ephemeral" } // Cache context
+                        },
+                        {
+                            type: "text",
+                            text: `Question: ${query}`
+                        }
+                    ]
+                }
+            ],
         };
 
         const streamCommand = new InvokeModelWithResponseStreamCommand({
@@ -463,8 +541,13 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
             }
         } catch (e: any) {
             console.error("Bedrock Stream Error:", e);
-            // Fallback to standard invoke if stream fails (omitted for brevity, assume stream works)
-            responseStream.write(`\n(Error generating response: ${e.message})\n`);
+
+            // Check if it's a rate limit error (429)
+            if (e.name === 'ThrottlingException' || e.$metadata?.httpStatusCode === 429) {
+                responseStream.write(`\n\n申し訳ございません。現在リクエストが集中しているため、少し時間をおいてから再度お試しください。\n\n(Error: Too many requests - please wait a moment and try again)\n`);
+            } else {
+                responseStream.write(`\n\n回答の生成中にエラーが発生しました: ${e.message}\n\n(Error generating response: ${e.message})\n`);
+            }
         }
 
         // Append Citations

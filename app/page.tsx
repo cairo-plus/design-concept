@@ -312,6 +312,10 @@ export default function Dashboard() {
   const handleGenerate = async () => {
     setIsGenerating(true);
 
+    // Helper for delay
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const MAX_RETRIES = 3;
+
     try {
       const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.path);
 
@@ -333,12 +337,43 @@ The JSON must match this structure:
 If specific data is not found, infer reasonable engineering defaults or state "Not specified" but maintain the JSON structure.
       `;
 
-      const response = await client.queries.ragChat({
-        query: prompt,
-        uploadedDocs: allUploadedDocs.length > 0 ? allUploadedDocs : undefined
-      });
+      let response;
+      let attempt = 0;
+      let success = false;
+      let lastError;
 
-      const jsonString = response.data?.answer || "{}";
+      while (attempt < MAX_RETRIES && !success) {
+        try {
+          attempt++;
+          if (attempt > 1) {
+            console.log(`Retry attempt ${attempt}...`);
+            // Exponential backoff: 2s, 4s, etc.
+            await sleep(2000 * attempt);
+          }
+
+          response = await client.queries.ragChat({
+            query: prompt,
+            uploadedDocs: allUploadedDocs.length > 0 ? allUploadedDocs : undefined
+          });
+          success = true;
+        } catch (e: any) {
+          console.warn(`Generation attempt ${attempt} failed:`, e);
+          lastError = e;
+          // Check for 429 or Network Error
+          // Note: AppSync/Amplify might wrap validation errors differently, but usually text contains "429" or "Too Many Requests"
+          const isRateLimit = e.message?.includes("429") || e.message?.includes("Too Many Requests") || e.message?.includes("Network Error");
+
+          if (!isRateLimit) {
+            // If it's not a rate limit issue, break immediately (e.g. Auth error)
+            throw e;
+          }
+          // If it IS a rate limit, loop continues
+        }
+      }
+
+      if (!success) throw lastError || new Error("Failed after retries");
+
+      const jsonString = response?.data?.answer || "{}";
       // Sanitize string if LLM adds markdown blocks
       const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
 
@@ -363,7 +398,12 @@ If specific data is not found, infer reasonable engineering defaults or state "N
       }
     } catch (e) {
       console.error("Generation failed", e);
-      alert("生成に失敗しました: " + (e as Error).message);
+      const isRateLimit = (e as Error).message?.includes("429") || (e as Error).message?.includes("Too Many Requests");
+      if (isRateLimit) {
+        alert("サーバーが混雑しています。しばらく待ってから再度お試しください。(Error 429)");
+      } else {
+        alert("生成に失敗しました: " + (e as Error).message);
+      }
     } finally {
       setIsGenerating(false);
     }
