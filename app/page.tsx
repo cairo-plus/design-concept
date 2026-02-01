@@ -241,7 +241,7 @@ export default function Dashboard() {
     setIsGenerating(true);
 
     try {
-      const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.name);
+      const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.path);
 
       const prompt = `
 Generate a design concept data for component "${selectedComponent}" based on the provided documents.

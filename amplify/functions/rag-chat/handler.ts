@@ -30,48 +30,35 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     }
 
     try {
-        // 1. Fetch relevant files using chunks
+        // 1. Fetch relevant files using direct paths
         let context = "";
         const citations: string[] = [];
         const debugLogs: string[] = [];
 
-        // We look in "protected/" for processed files (chunks.json)
-        const listCommand = new ListObjectsV2Command({
-            Bucket: bucketName,
-            Prefix: "protected/",
-        });
-        const listResponse = await s3Client.send(listCommand);
-        const allFiles = listResponse.Contents || [];
+        // uploadedDocs now contains full S3 paths (e.g. "public/Plan/20230101/A.pdf")
+        console.log(`Received ${uploadedDocs.length} paths to process.`);
 
-        // Filter for files directly matching the uploaded docs but with _chunks.json suffix
-        // The structure is protected/{docType}/{timestamp}/{filename}_chunks.json
-        // But uploadedDocs provides the filename (e.g., "A.pdf").
-        // We need to match if the S3 key *contains* the filename + "_chunks.json" inside.
+        const targetKeys = uploadedDocs.map(path => {
+            // Transform public/ path to protected/ chunk path
+            // 1. public/ -> protected/
+            // 2. Extension -> _chunks.json
+            // Example: public/A/B/file.pdf -> protected/A/B/file_chunks.json
 
-        const relevantFiles = allFiles.filter(file => {
-            if (!file.Key || !file.Key.endsWith("_chunks.json")) return false;
-
-            // Check if any uploaded doc name matches the key
-            // Example: file.Key = "protected/Plan/TIME/MyDoc_chunks.json"
-            // uploadedDoc = "MyDoc.pdf" -> we match "MyDoc"
-
-            return uploadedDocs.some(docName => {
-                // Remove extension to match base name
-                const baseName = docName.substring(0, docName.lastIndexOf('.')) || docName;
-                return file.Key!.includes(baseName);
-            });
+            let target = path.replace("public/", "protected/");
+            const lastDotIndex = target.lastIndexOf(".");
+            if (lastDotIndex !== -1) {
+                target = target.substring(0, lastDotIndex);
+            }
+            return target + "_chunks.json";
         });
 
-        console.log(`Found ${relevantFiles.length} processed chunk files in S3 (protected/).`);
+        console.log("Target chunk keys:", targetKeys);
 
-        for (const file of relevantFiles) {
-            if (!file.Key) continue;
-
+        for (const key of targetKeys) {
             try {
-                console.log(`Processing chunk file: ${file.Key}`);
                 const getCommand = new GetObjectCommand({
                     Bucket: bucketName,
-                    Key: file.Key,
+                    Key: key,
                 });
                 const response = await s3Client.send(getCommand);
 
@@ -90,15 +77,18 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
                 }
 
                 const truncatedText = fileText.slice(0, 50000);
-                context += `\n--- Document: ${file.Key} ---\n${truncatedText}\n`;
+                context += `\n--- Document: ${key} ---\n${truncatedText}\n`;
 
-                // Citation logic: extract original filename from Key or use Key
-                const citationName = file.Key.split('/').pop()?.replace('_chunks.json', '') || file.Key;
-                citations.push(citationName);
+                // Citation logic: use original filename derived from key
+                // Key: protected/Type/Time/File_chunks.json -> File
+                const parts = key.split('/');
+                const fileName = parts[parts.length - 1].replace('_chunks.json', '');
+                citations.push(fileName);
 
             } catch (e: any) {
-                console.error(`Error processing chunk file ${file.Key}:`, e);
-                debugLogs.push(`Error reading ${file.Key}: ${e.message}`);
+                // If file not found, it might still be processing. We skip it but log.
+                console.warn(`Could not read chunk file ${key}: ${e.message}`);
+                // debugLogs.push(`Missing: ${key}`); 
             }
         }
 
