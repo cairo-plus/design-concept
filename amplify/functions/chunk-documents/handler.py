@@ -1,6 +1,7 @@
 import os
 import json
 import boto3
+import urllib.parse
 import re
 from typing import List, Dict
 
@@ -27,7 +28,7 @@ def handler(event, context):
     for record in event.get('Records', []):
         try:
             bucket = record['s3']['bucket']['name']
-            key = record['s3']['object']['key']
+            key = urllib.parse.unquote_plus(record['s3']['object']['key'])
             
             # .mdファイルのみ処理
             if not key.endswith('.md'):
