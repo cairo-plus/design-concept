@@ -16,6 +16,15 @@ const schema = a.schema({
     })
         .authorization(allow => [allow.owner()]),
 
+    InteractionHistory: a.model({
+        type: a.string().required(), // "CHAT" | "DESIGN_DRAFT"
+        query: a.string().required(),
+        response: a.string().required(),
+        usedSources: a.string().array(),
+        createdAt: a.datetime(),
+    })
+        .authorization(allow => [allow.owner()]),
+
     ragChat: a
         .query()
         .arguments({

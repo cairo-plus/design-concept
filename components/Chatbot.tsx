@@ -110,6 +110,19 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
                     citations: citations
                 },
             ]);
+
+            // Save interaction history
+            try {
+                await client.models.InteractionHistory.create({
+                    type: "CHAT",
+                    query: userMessage,
+                    response: answer,
+                    usedSources: citations,
+                    createdAt: new Date().toISOString()
+                });
+            } catch (saveError) {
+                console.error("Failed to save chat history", saveError);
+            }
         } catch (error) {
             console.error("Chat error:", error);
             setMessages((prev) => [

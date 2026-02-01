@@ -10,6 +10,7 @@ import { DesignConceptData } from "@/lib/excelExport";
 import { uploadData, remove } from "aws-amplify/storage";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "@/amplify/data/resource";
+import Link from "next/link";
 
 const client = generateClient<Schema>();
 
@@ -276,6 +277,19 @@ If specific data is not found, infer reasonable engineering defaults or state "N
       if (!data.sections) throw new Error("Invalid JSON structure");
 
       setGeneratedData(data);
+
+      // Save interaction history
+      try {
+        await client.models.InteractionHistory.create({
+          type: "DESIGN_DRAFT",
+          query: `Design Concept Generation for ${selectedComponent}`,
+          response: jsonString,
+          usedSources: allUploadedDocs,
+          createdAt: new Date().toISOString()
+        });
+      } catch (saveError) {
+        console.error("Failed to save generation history", saveError);
+      }
     } catch (e) {
       console.error("Generation failed", e);
       alert("生成に失敗しました: " + (e as Error).message);
@@ -324,6 +338,10 @@ If specific data is not found, infer reasonable engineering defaults or state "N
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3 text-sm justify-end text-right">
+            <Link href="/history" className="text-sky-100 hover:text-white font-semibold mr-4 flex items-center gap-1 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              履歴を見る
+            </Link>
             <div className="leading-tight">
               <p className="font-semibold">{user?.signInDetails?.loginId || user?.username || "User"}</p>
               <p className="text-[11px] text-sky-50/90">ログイン中</p>
