@@ -1,14 +1,7 @@
-import "./polyfill"; // Must be imported first to ensure DOMMatrix is defined
+// Polyfill for potential missing globals (though TextDecoder is usually in Node 18+)
+import "./polyfill";
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-// Robust import for pdf-parse using createRequire to ensure it loads AFTER polyfill
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const pdfLib = require("pdf-parse");
-const pdf = pdfLib.default || pdfLib;
-
-import * as XLSX from "xlsx";
-import axios from "axios";
 
 // Clients
 const s3Client = new S3Client({});
