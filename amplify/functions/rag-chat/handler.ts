@@ -4,8 +4,13 @@ import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/clien
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 
 // Clients
-const s3Client = new S3Client({});
-const bedrockClient = new BedrockRuntimeClient({});
+const s3Client = new S3Client({
+    maxAttempts: 3
+});
+const bedrockClient = new BedrockRuntimeClient({
+    maxAttempts: 5, // Retry up to 5 times for Bedrock throttling
+    retryMode: "standard"
+});
 
 // Types
 interface ChatEvent {
@@ -126,7 +131,14 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             body: JSON.stringify(payload),
         });
 
-        const bedrockResponse = await bedrockClient.send(invokeCommand);
+        let bedrockResponse;
+        try {
+            bedrockResponse = await bedrockClient.send(invokeCommand);
+        } catch (e: any) {
+            console.error("Bedrock Invoke Error:", e);
+            throw new Error(`Bedrock Error: ${e.message}`);
+        }
+
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
         let answer = responseBody.content[0].text;
 
