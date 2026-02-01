@@ -29,6 +29,7 @@ export interface UploadedFile {
   name: string;
   path: string;
   uploadedAt: string;
+  id?: string;
 }
 
 export default function Dashboard() {
@@ -157,6 +158,15 @@ export default function Dashboard() {
   const handleRemoveFile = async (docName: string, fileToRemove: UploadedFile) => {
     if (!confirm(`「${fileToRemove.name}」をリストから削除しますか？\n(S3上のファイルは保持されます)`)) return;
 
+    // Delete from Data Store if ID exists
+    if (fileToRemove.id) {
+      try {
+        await client.models.UserDocument.delete({ id: fileToRemove.id });
+      } catch (e) {
+        console.error("Failed to delete record", e);
+      }
+    }
+
     // Remove from UI list only (keep in S3)
     const existingFiles = uploadedFiles[docName] || [];
     const updatedFiles = existingFiles.filter(f => f.path !== fileToRemove.path);
@@ -170,7 +180,7 @@ export default function Dashboard() {
     }
 
     setUploadedFiles(newState);
-    localStorage.setItem("design-concept-files-v3", JSON.stringify(newState));
+    // localStorage.setItem("design-concept-files-v3", JSON.stringify(newState)); // Removed
     setGeneratedData(null);
   };
 
