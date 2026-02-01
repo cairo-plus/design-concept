@@ -66,14 +66,16 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
 
     // Update greeting when data changes
     useEffect(() => {
-        const uploadedCount = Object.keys(uploadedFiles).length;
+        // Count total actual files, not just category keys
+        const uploadedCount = Object.values(uploadedFiles).reduce((acc, files) => acc + files.length, 0);
+
         if (uploadedCount > 0) {
             setMessages([{
                 role: "bot",
                 content: `こんにちは。${uploadedCount}件の資料がアップロードされています。\n\n設計構想書に関する質問があればどうぞ。`
             }]);
         }
-    }, [Object.keys(uploadedFiles).length]);
+    }, [uploadedFiles]);
 
     const handleSend = async () => {
         if (!input.trim()) return;
