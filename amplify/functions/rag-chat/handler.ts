@@ -1,16 +1,15 @@
 // Polyfill for potential missing globals (though TextDecoder is usually in Node 18+)
 import "./polyfill";
-import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import axios from 'axios';
 
 // Clients
 const s3Client = new S3Client({
-    maxAttempts: 3
+    maxAttempts: 3,
 });
 const bedrockClient = new BedrockRuntimeClient({
     maxAttempts: 5, // Retry up to 5 times for Bedrock throttling
-    retryMode: "standard"
+    retryMode: "standard",
 });
 
 // Types
@@ -26,6 +25,38 @@ interface ChatResponse {
     citations: string[];
 }
 
+interface ChunkMetadata {
+    source?: string;
+    doc_type?: string;
+    heading?: string;
+    [key: string]: any;
+}
+
+interface Chunk {
+    id: string;
+    text: string;
+    metadata?: ChunkMetadata;
+}
+
+// Priority Definition
+const PRIORITY_ORDER = [
+    "past_design_intent", // 設計構想書
+    "merchandise_plan", // 商品計画書
+    "product_plan", // 製品企画書
+    "regulation", // 法規リスト
+];
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+    past_design_intent: "設計構想書 (Design Concept)",
+    merchandise_plan: "商品計画書 (Merchandise Plan)",
+    product_plan: "製品企画書 (Product Plan)",
+    regulation: "法規リスト (Regulation List)",
+    current_bom: "部品表 (BOM)",
+    technical_paper: "技術資料 (Technical Document)",
+    competitor_benchmark: "競合比較 (Competitor Benchmark)",
+    reflex_rules: "脊髄反射ルール (Reflex Rule)",
+};
+
 export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     console.log("Received event:", JSON.stringify(event));
     const { query, uploadedDocs = [] } = event.arguments;
@@ -36,20 +67,13 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     }
 
     try {
-        // 1. Fetch relevant files using direct paths
-        let context = "";
+        // 1. Fetch chunks
         const citations: string[] = [];
         const debugLogs: string[] = [];
 
-        // uploadedDocs now contains full S3 paths (e.g. "public/Plan/20230101/A.pdf")
         console.log(`Received ${uploadedDocs.length} paths to process.`);
 
-        const targetKeys = uploadedDocs.map(path => {
-            // Transform public/ path to protected/ chunk path
-            // 1. public/ -> protected/
-            // 2. Extension -> _chunks.json
-            // Example: public/A/B/file.pdf -> protected/A/B/file_chunks.json
-
+        const targetKeys = uploadedDocs.map((path) => {
             let target = path.replace("public/", "protected/");
             const lastDotIndex = target.lastIndexOf(".");
             if (lastDotIndex !== -1) {
@@ -58,7 +82,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             return target + "_chunks.json";
         });
 
-        console.log("Target chunk keys:", targetKeys);
+        // Store all chunks to sort them later
+        const allChunks: Chunk[] = [];
 
         for (const key of targetKeys) {
             try {
@@ -67,78 +92,109 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
                     Key: key,
                 });
                 const response = await s3Client.send(getCommand);
-
                 if (!response.Body) continue;
 
                 const jsonStr = await response.Body.transformToString();
-                const chunks = JSON.parse(jsonStr);
+                const fileChunks = JSON.parse(jsonStr);
 
-                // Concatenate text from all chunks
-                let fileText = "";
-                if (Array.isArray(chunks)) {
-                    fileText = chunks.map((c: any) => {
-                        const header = c.metadata?.heading ? `[${c.metadata.heading}] ` : "";
-                        return `${header}${c.text}`;
-                    }).join("\n\n");
+                if (Array.isArray(fileChunks)) {
+                    allChunks.push(...fileChunks);
                 }
 
-                const truncatedText = fileText.slice(0, 50000);
-                context += `\n--- Document: ${key} ---\n${truncatedText}\n`;
-
-                // Citation logic: use original filename derived from key
-                // Key: protected/Type/Time/File_chunks.json -> File
-                const parts = key.split('/');
-                const fileName = parts[parts.length - 1].replace('_chunks.json', '');
-                citations.push(fileName);
-
+                // Add to citations list (unique filenames)
+                const parts = key.split("/");
+                const fileName = parts[parts.length - 1].replace("_chunks.json", "");
+                if (!citations.includes(fileName)) {
+                    citations.push(fileName);
+                }
             } catch (e: any) {
-                // If file not found, it might still be processing. We skip it but log.
                 console.warn(`Could not read chunk file ${key}: ${e.message}`);
-                // debugLogs.push(`Missing: ${key}`); 
             }
         }
 
-        // 2. Construct Prompt for Bedrock
-        // 2. Construct Prompt for Bedrock
-        const systemPrompt = `You are a helpful design assistant. 
-    Answer the user's question using ONLY the provided context documents.
-    
-    If the user asks for a specific format (e.g., JSON, or a specific document structure), follow their instructions.
-    Otherwise, answer the question in a helpful, professional manner in Japanese.
+        // 2. Sort chunks by Priority
+        allChunks.sort((a, b) => {
+            const typeA = a.metadata?.doc_type || "unknown";
+            const typeB = b.metadata?.doc_type || "unknown";
 
-    CRITICAL RULES FOR CONTENT:
-    1. The CONTENT must be extracted strictly from the provided context documents.
-    2. Do NOT use any example text or general knowledge to fill these sections unless it exists in the documents.
-    3. If the context documents do not contain information for a specific section, write "Not mentioned in documents" or equivalent.
+            const indexA = PRIORITY_ORDER.indexOf(typeA);
+            const indexB = PRIORITY_ORDER.indexOf(typeB);
+
+            // If both are in the priority list, lower index comes first
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            // If only A is in list, A comes first
+            if (indexA !== -1) return -1;
+            // If only B is in list, B comes first
+            if (indexB !== -1) return 1;
+
+            // Neither in list, keep original order
+            return 0;
+        });
+
+        // 3. Construct Context with Headers
+        let context = "";
+        let currentType = "";
+        const MAX_CONTEXT_LENGTH = 150000; // Sonnet 4.5 has 200k context
+
+        for (const chunk of allChunks) {
+            if (context.length > MAX_CONTEXT_LENGTH) break;
+
+            const docType = chunk.metadata?.doc_type || "other";
+            const docLabel = DOC_TYPE_LABELS[docType] || "Other Documents";
+
+            if (docType !== currentType) {
+                context += `\n\n=== SECTION: ${docLabel} ===\n`;
+                currentType = docType;
+            }
+
+            const header = chunk.metadata?.heading ? `[Heading: ${chunk.metadata.heading}]` : "";
+            const source = chunk.metadata?.source ? `(Source: ${chunk.metadata.source})` : "";
+
+            context += `\n${header} ${source}\n${chunk.text}\n`;
+        }
+
+        if (context.length === 0) {
+            context = "No relevant documents found.";
+        }
+
+        // 4. Construct Prompt for Bedrock
+        const systemPrompt = `You are a sophisticated design assistant provided by "Antigravity". 
+    Answer the user's question using the provided context documents.
     
-     CRITICAL: You MUST prioritize citations in the following order:
-    1. 設計構想書 (Design Concept)
-    2. 商品計画書 (Product Plan)
-    3. 製品企画書 (Product Planning)
+    ## Citation Rules (STRICT)
+    You MUST prioritize information and citations in this order:
+    1. 設計構想書 (Design Concept) - **Highest Priority**
+    2. 商品計画書 (Merchandise Plan)
+    3. 製品企画書 (Product Plan)
     4. 法規リスト (Regulation List)
+    5. Other documents
     
-    If the answer is explicitly found in the documents, cite the document name.
-    If the answer is NOT found in the documents, and context was provided, invoke the <search_needed/> tag.
-    If NO context was provided, answer from your general knowledge but mention that no documents were found.
-
-    CRITICAL: You MUST answer in Japanese. Do NOT use English.
+    When citing, explicitly mention the document type and name.
+    Example: "According to the Design Concept (File A)..."
+    
+    ## Fallback / Research Simulation
+    If the provided documents DO NOT contain the answer:
+    1. Do NOT make up information from the documents.
+    2. Instead, use your general knowledge to "search" for the answer.
+    3. Use the format: "【ウェブ検索（シミュレーション）】" followed by the answer.
+    4. Explicitly cite the likely source of this general knowledge (e.g., "Source: UN Regulation No. 123", "Source: Toyota Global Website").
+    
+    Current Date: ${new Date().toISOString()}
     `;
 
-        const userMessage = `Context:
+        const userMessage = `Context Priority (Top to Bottom):
     ${context}
     
     Question: ${query}`;
 
-        // Invoke Bedrock (Claude 3.5 Sonnet)
-        const modelId = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+        // Invoke Bedrock
+        const modelId = "anthropic.claude-sonnet-4-5-20250929-v1:0";
 
         const payload = {
             anthropic_version: "bedrock-2023-05-31",
-            max_tokens: 1000,
+            max_tokens: 2000,
             system: systemPrompt,
-            messages: [
-                { role: "user", content: userMessage }
-            ]
+            messages: [{ role: "user", content: userMessage }],
         };
 
         const invokeCommand = new InvokeModelCommand({
@@ -153,111 +209,37 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             bedrockResponse = await bedrockClient.send(invokeCommand);
         } catch (e: any) {
             console.error("Bedrock Invoke Error:", e);
-            throw new Error(`Bedrock Error: ${e.message}`);
+            // Fallback to 3.5 Sonnet if 4.5 is not available/errored
+            if (e.message && (e.message.includes("ResourceNotFound") || e.message.includes("AccessDenied"))) {
+                console.log("Claude 4.5 Sonnet failed, falling back to 3.5 Sonnet...");
+                try {
+                    const fallbackInvokeCmd = new InvokeModelCommand({
+                        modelId: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+                        contentType: "application/json",
+                        accept: "application/json",
+                        body: JSON.stringify(payload),
+                    });
+                    bedrockResponse = await bedrockClient.send(fallbackInvokeCmd);
+                } catch (fallbackError: any) {
+                    throw new Error(`Bedrock Fallback Error: ${fallbackError.message}`);
+                }
+            } else {
+                throw new Error(`Bedrock Error: ${e.message}`);
+            }
         }
 
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
         let answer = responseBody.content[0].text;
 
-        // 3. Fallback / "Internet Search" Simulation -> REAL Tavily Search
-        // If the model says search is needed, we interpret that as "Not in docs".
-        if (answer.includes("<search_needed/>")) {
-            console.log("Fallback to Internet Search triggered.");
-
-            let searchContext = "";
-            let searchCitations: string[] = [];
-
-            try {
-                // Call Tavily API
-                const tavilyKey = process.env.TAVILY_API_KEY;
-                if (!tavilyKey) {
-                    throw new Error("TAVILY_API_KEY is not set.");
-                }
-
-                const searchResponse = await axios.post("https://api.tavily.com/search", {
-                    api_key: tavilyKey,
-                    query: query,
-                    search_depth: "advanced",
-                    include_answer: true,
-                    max_results: 5
-                });
-
-                const results = searchResponse.data.results || [];
-                const searchAnswer = searchResponse.data.answer || "";
-
-                searchContext = `Tavily Search Summary: ${searchAnswer}\n\nSearch Results:\n` +
-                    results.map((r: any) => `- [${r.title}](${r.url}): ${r.content}`).join("\n");
-
-                // Collect sources for frontend display if needed, though we usually just put them in the text
-                searchCitations = results.map((r: any) => `[${r.title}](${r.url})`);
-
-            } catch (searchError: any) {
-                console.error("Tavily Search failed:", searchError);
-                searchContext = "Internet search failed. Please try again later or check configuration.";
-            }
-
-            const fallbackPrompt = `You are a helpful assistant. The user asked: "${query}".
-        You previously couldn't find the answer in the provided files.
-        We performed an internet search and found the following results:
-        
-        ${searchContext}
-
-        Please answer the user's question using ONLY the search results provided above.
-        
-        If the user asks for a specific format in their question, follow it.
-        Otherwise, answer naturally.
-
-        Review the search results and cite the sources explicitly in your response using the format: [Title](URL).
-        Prioritize high-reliability sources (papers, laws, official manufacturers) if available in the results.
-        
-        CRITICAL: You MUST answer in Japanese. Do NOT use English.
-        `;
-
-            const fallbackPayload = {
-                anthropic_version: "bedrock-2023-05-31",
-                max_tokens: 1000,
-                messages: [
-                    { role: "user", content: fallbackPrompt }
-                ]
-            };
-
-            const fallbackInvoke = new InvokeModelCommand({
-                modelId,
-                contentType: "application/json",
-                accept: "application/json",
-                body: JSON.stringify(fallbackPayload),
-            });
-
-            const fallbackResponse = await bedrockClient.send(fallbackInvoke);
-            const fallbackBody = JSON.parse(new TextDecoder().decode(fallbackResponse.body));
-            answer = fallbackBody.content[0].text;
-
-            // Clear file citations, replace with search citations or note
-            citations.splice(0, citations.length);
-            // We can push the generic "Internet Search" or specific domains if we want granular chips
-            // For now, let's add a "Internet Search" chip
-            citations.push("Internet Search");
-        }
-
-        // Append debug logs if answer is empty or error-like, for visibility during dev
-        if (!answer) {
-            answer = "Generated answer was empty.";
-            if (debugLogs.length > 0) {
-                answer += "\n\nDebug Logs:\n" + debugLogs.join("\n");
-            }
-        }
-
         return {
             answer,
-            citations
+            citations,
         };
-
     } catch (error: any) {
         console.error("Handler error:", error);
-        // RETURN the error as the answer so it's visible in the UI
         return {
             answer: `System Error: ${error.message}\n\nPlease check logs.`,
-            citations: []
+            citations: [],
         };
     }
 };
