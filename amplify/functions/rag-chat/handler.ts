@@ -46,6 +46,13 @@ const PRIORITY_ORDER = [
     "regulation", // 法規リスト
 ];
 
+const PRIORITY_KEYWORDS: Record<string, string[]> = {
+    regulation: ["法規", "規制", "ルール", "法令", "法律", "基準"],
+    merchandise_plan: ["商品", "マーチャンダイジング", "ターゲット", "市場"],
+    product_plan: ["製品", "企画", "スペック", "仕様", "諸元"],
+    past_design_intent: ["設計", "構想", "意図", "エンジニアリング", "技術"],
+};
+
 const DOC_TYPE_LABELS: Record<string, string> = {
     past_design_intent: "設計構想書 (Design Concept)",
     merchandise_plan: "商品計画書 (Merchandise Plan)",
@@ -113,12 +120,23 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         }
 
         // 2. Sort chunks by Priority
+        // Dynamic Priority Adjustment
+        let currentPriority = [...PRIORITY_ORDER];
+        for (const [type, keywords] of Object.entries(PRIORITY_KEYWORDS)) {
+            if (keywords.some(k => query.includes(k))) {
+                // Move this type to the front
+                currentPriority = [type, ...currentPriority.filter(t => t !== type)];
+                console.log(`Dynamic Priority: Promoted ${type} based on query keywords.`);
+                break;
+            }
+        }
+
         allChunks.sort((a, b) => {
             const typeA = a.metadata?.doc_type || "unknown";
             const typeB = b.metadata?.doc_type || "unknown";
 
-            const indexA = PRIORITY_ORDER.indexOf(typeA);
-            const indexB = PRIORITY_ORDER.indexOf(typeB);
+            const indexA = currentPriority.indexOf(typeA);
+            const indexB = currentPriority.indexOf(typeB);
 
             // If both are in the priority list, lower index comes first
             if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -160,6 +178,16 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         // 4. Construct Prompt for Bedrock
         const systemPrompt = `You are a sophisticated design assistant provided by "Antigravity". 
     Answer the user's question using the provided context documents.
+
+    ## Thinking Process
+    Before answering, analyze the user's request and the provided documents step-by-step.
+    1. Identify the core question and any specific constraints (e.g. "latest regulations").
+    2. Scan the provided context for relevant keywords and concepts.
+    3. Evaluate the reliability and priority of the information sources based on the Citation Rules.
+    4. Formulate your answer based ONLY on the evidence.
+    
+    Put your thinking process inside <thinking> tags.
+    Put your final user-facing answer inside <answer> tags.
     
     ## Citation Rules (STRICT)
     You MUST prioritize information and citations in this order:
@@ -210,7 +238,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         } catch (e: any) {
             console.error("Bedrock Invoke Error:", e);
             // Fallback to 3.5 Sonnet if 4.5 is not available/errored
-            if (e.message && (e.message.includes("ResourceNotFound") || e.message.includes("AccessDenied"))) {
+            if (e.message && (e.message.includes("ResourceNotFound") || e.message.includes("AccessDenied") || e.message.includes("ValidationException") || e.message.includes("supported"))) {
                 console.log("Claude 4.5 Sonnet failed, falling back to 3.5 Sonnet...");
                 try {
                     const fallbackInvokeCmd = new InvokeModelCommand({
@@ -229,7 +257,14 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         }
 
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
-        let answer = responseBody.content[0].text;
+        const rawText = responseBody.content[0].text;
+
+        // Extract answer from tags if present
+        const answerMatch = rawText.match(/<answer>([\s\S]*?)<\/answer>/);
+        let answer = answerMatch ? answerMatch[1].trim() : rawText;
+
+        // Clean up thinking tags if they leaked into the fallback
+        answer = answer.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
 
         return {
             answer,
