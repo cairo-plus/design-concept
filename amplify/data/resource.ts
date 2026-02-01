@@ -7,6 +7,14 @@ const schema = a.schema({
         citations: a.string().array(),
     }),
 
+    UserDocument: a.model({
+        docType: a.string().required(),
+        fileName: a.string().required(),
+        s3Path: a.string().required(),
+        uploadedAt: a.string(),
+    })
+        .authorization(allow => [allow.owner()]),
+
     ragChat: a
         .query()
         .arguments({

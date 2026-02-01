@@ -52,17 +52,39 @@ export default function Dashboard() {
     }
   }, [isLoading, isAuthenticated, router]);
 
-  // Load from local storage
+  // Load from Data Store (UserDocument)
   useEffect(() => {
-    const saved = localStorage.getItem("design-concept-files-v3");
-    if (saved) {
+    if (!isAuthenticated) return;
+
+    const fetchDocuments = async () => {
       try {
-        setUploadedFiles(JSON.parse(saved));
+        const { data: items } = await client.models.UserDocument.list();
+
+        // Reconstruct state from flat list
+        const newState: { [key: string]: UploadedFile[] } = {};
+
+        // Initialize keys
+        INPUT_DOCS.forEach(doc => newState[doc] = []);
+
+        items.forEach(item => {
+          if (newState[item.docType]) {
+            newState[item.docType].push({
+              name: item.fileName,
+              path: item.s3Path,
+              uploadedAt: item.uploadedAt || new Date().toISOString(),
+              id: item.id // Store DB ID for deletion
+            } as UploadedFile & { id: string });
+          }
+        });
+
+        setUploadedFiles(newState);
       } catch (e) {
-        console.error("Failed to parse saved files", e);
+        console.error("Failed to fetch user documents", e);
       }
-    }
-  }, []);
+    };
+
+    fetchDocuments();
+  }, [isAuthenticated]);
 
   // Helper to format timestamp
   const getTimestampFolder = () => {
@@ -95,21 +117,28 @@ export default function Dashboard() {
             data: file,
           }).result;
 
+          // Save to Data Store
+          const { data: newRecord } = await client.models.UserDocument.create({
+            docType: docName,
+            fileName: file.name,
+            s3Path: path,
+            uploadedAt: new Date().toISOString(),
+          });
+
           newFiles.push({
             name: file.name,
             path: path,
-            uploadedAt: new Date().toISOString()
-          });
+            uploadedAt: newRecord?.uploadedAt || new Date().toISOString(),
+            id: newRecord?.id // Capture ID
+          } as UploadedFile & { id?: string });
         }
 
         const existingFiles = uploadedFiles[docName] || [];
-        // Determine unique files based on name (optional: allows duplicates if in different folders, but UI might be confusing)
-        // For now, simply append all new uploads as they are timely separated
         const updatedFiles = [...existingFiles, ...newFiles];
         const newState = { ...uploadedFiles, [docName]: updatedFiles };
 
         setUploadedFiles(newState);
-        localStorage.setItem("design-concept-files-v3", JSON.stringify(newState));
+        // localStorage.setItem("design-concept-files-v3", JSON.stringify(newState)); // Removed
 
         // Clear generated data when files change
         setGeneratedData(null);
@@ -149,11 +178,23 @@ export default function Dashboard() {
   const handleClearAllFiles = async (docName: string) => {
     if (!confirm(`「${docName}」のすべてのファイルをリストから削除しますか？\n(S3上のファイルは保持されます)`)) return;
 
+    const filesToRemove = uploadedFiles[docName] || [];
+
+    // Delete from Data Store
+    try {
+      await Promise.all(
+        filesToRemove
+          .filter(f => f.id)
+          .map(f => client.models.UserDocument.delete({ id: f.id! }))
+      );
+    } catch (e) {
+      console.error("Failed to delete all records", e);
+    }
+
     // Remove from UI list only (keep in S3)
     const newState = { ...uploadedFiles };
     delete newState[docName];
     setUploadedFiles(newState);
-    localStorage.setItem("design-concept-files-v3", JSON.stringify(newState));
     setGeneratedData(null);
   };
 
