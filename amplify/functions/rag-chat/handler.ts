@@ -482,7 +482,8 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
         const contextMessage = `Context Priority (Top to Bottom):
     ${context}`;
 
-        const modelId = "us.anthropic.claude-3-5-sonnet-20241022-v2:0";
+        // Use standard model ID for ap-northeast-1 (not cross-region us. prefix)
+        const modelId = "anthropic.claude-3-5-sonnet-20241022-v2:0";
 
         // OPTIMIZATION: Use Prompt Caching for system prompt and context
         // This can reduce costs by 90% and improve latency on cache hits
