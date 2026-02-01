@@ -23,6 +23,72 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
     // State for processing status
     const [processingStatus, setProcessingStatus] = useState<{ [key: string]: "up-to-date" | "processing" | "ready" }>({});
 
+    // History State
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyItems, setHistoryItems] = useState<any[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+
+    // Fetch History
+    const fetchHistory = async () => {
+        setLoadingHistory(true);
+        try {
+            const { data: items } = await client.models.InteractionHistory.list({
+                authMode: "userPool"
+            });
+            const chatHistory = items
+                .filter(item => item.type === "CHAT" && !item.isDeleted)
+                .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+            setHistoryItems(chatHistory);
+        } catch (e) {
+            console.error("Failed to fetch history", e);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    useEffect(() => {
+        if (showHistory) {
+            fetchHistory();
+        }
+    }, [showHistory]);
+
+    const handleLoadHistoryItem = (item: any) => {
+        setMessages([
+            { role: "user", content: item.query },
+            { role: "bot", content: item.response }
+        ]);
+        setShowHistory(false);
+    };
+
+    const handleDeleteItem = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (!confirm("この履歴を削除しますか？")) return;
+        try {
+            await client.models.InteractionHistory.update({
+                id,
+                isDeleted: true
+            });
+            setHistoryItems(prev => prev.filter(item => item.id !== id));
+        } catch (e) {
+            console.error("Failed to delete item", e);
+        }
+    };
+
+    const handleDeleteAll = async () => {
+        if (!confirm("履歴をすべて削除しますか？\n(データベースからは完全に削除されませんが、ここからは見えなくなります)")) return;
+        try {
+            await Promise.all(historyItems.map(item =>
+                client.models.InteractionHistory.update({
+                    id: item.id,
+                    isDeleted: true
+                })
+            ));
+            setHistoryItems([]);
+        } catch (e) {
+            console.error("Failed to delete all items", e);
+        }
+    };
+
     // Poll for processing status
     useEffect(() => {
         const checkStatus = async () => {
@@ -171,53 +237,112 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
                         <p className="text-xs text-sky-50">設計に関する質問にお答えします</p>
                     </div>
                 </div>
-                {Object.values(processingStatus).some(s => s === "processing") && (
-                    <div className="bg-white/20 rounded px-2 py-1 text-[10px] text-white animate-pulse">
-                        処理中...
-                    </div>
-                )}
+                <div className="flex items-center gap-2">
+                    {Object.values(processingStatus).some(s => s === "processing") && (
+                        <div className="bg-white/20 rounded px-2 py-1 text-[10px] text-white animate-pulse">
+                            処理中...
+                        </div>
+                    )}
+                    <button
+                        onClick={() => setShowHistory(!showHistory)}
+                        className={`p-1.5 rounded-lg transition-colors ${showHistory ? "bg-white text-sky-600" : "text-sky-100 hover:bg-white/10"}`}
+                        title="履歴を表示"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </button>
+                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
-                {messages.map((msg, idx) => (
-                    <div
-                        key={idx}
-                        className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-                    >
-                        <div
-                            className={`max-w-[85%] rounded-xl p-3 text-sm whitespace-pre-line ${msg.role === "user"
-                                ? "bg-sky-600 text-white rounded-br-none"
-                                : "bg-white text-slate-800 ring-1 ring-slate-200 rounded-bl-none"
-                                }`}
-                        >
-                            {formatMessage(msg.content)}
-
-                        </div>
-                        {msg.citations && msg.citations.length > 0 && (
-                            <div className="mt-1 text-xs text-slate-500 ml-1">
-                                <p className="font-semibold mb-1">引用元:</p>
-                                <ul className="list-disc pl-4 space-y-0.5">
-                                    {msg.citations.map((cite, i) => (
-                                        <li key={i}>{cite}</li>
-                                    ))}
-                                </ul>
-                            </div>
+            {showHistory ? (
+                <div className="flex-1 overflow-hidden flex flex-col bg-slate-50">
+                    <div className="p-3 border-b border-slate-200 bg-white flex justify-between items-center">
+                        <span className="text-xs font-semibold text-slate-500">履歴一覧 ({historyItems.length})</span>
+                        {historyItems.length > 0 && (
+                            <button
+                                onClick={handleDeleteAll}
+                                className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
+                            >
+                                すべて削除
+                            </button>
                         )}
                     </div>
-                ))}
-                {isLoading && (
-                    <div className="flex justify-start">
-                        <div className="bg-white text-slate-500 rounded-xl p-3 ring-1 ring-slate-200 rounded-bl-none text-sm flex items-center gap-2">
-                            <svg className="animate-spin h-4 w-4 text-sky-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            回答を生成中... (ファイルを検索しています)
-                        </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                        {loadingHistory ? (
+                            <div className="flex justify-center py-8">
+                                <div className="animate-spin h-6 w-6 border-b-2 border-sky-500 rounded-full"></div>
+                            </div>
+                        ) : historyItems.length === 0 ? (
+                            <div className="text-center py-10 text-slate-400 text-sm">
+                                <p>履歴はありません</p>
+                            </div>
+                        ) : (
+                            historyItems.map((item) => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => handleLoadHistoryItem(item)}
+                                    className="bg-white p-3 rounded-xl border border-slate-200 hover:border-sky-300 hover:shadow-sm cursor-pointer transition group"
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="text-[10px] text-slate-400">
+                                            {new Date(item.createdAt).toLocaleDateString("ja-JP")} {new Date(item.createdAt).toLocaleTimeString("ja-JP", { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <button
+                                            onClick={(e) => handleDeleteItem(e, item.id)}
+                                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition p-1"
+                                            title="削除"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        </button>
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-700 line-clamp-2">{item.query}</p>
+                                    <p className="text-xs text-slate-500 mt-1 line-clamp-1">{item.response}</p>
+                                </div>
+                            ))
+                        )}
                     </div>
-                )}
-            </div>
-            <div className="p-4 border-t border-slate-200 bg-white rounded-b-2xl">
+                </div>
+            ) : (
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                    {messages.map((msg, idx) => (
+                        <div
+                            key={idx}
+                            className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+                        >
+                            <div
+                                className={`max-w-[85%] rounded-xl p-3 text-sm whitespace-pre-line ${msg.role === "user"
+                                    ? "bg-sky-600 text-white rounded-br-none"
+                                    : "bg-white text-slate-800 ring-1 ring-slate-200 rounded-bl-none"
+                                    }`}
+                            >
+                                {formatMessage(msg.content)}
+
+                            </div>
+                            {msg.citations && msg.citations.length > 0 && (
+                                <div className="mt-1 text-xs text-slate-500 ml-1">
+                                    <p className="font-semibold mb-1">引用元:</p>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                        {msg.citations.map((cite, i) => (
+                                            <li key={i}>{cite}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {isLoading && (
+                        <div className="flex justify-start">
+                            <div className="bg-white text-slate-500 rounded-xl p-3 ring-1 ring-slate-200 rounded-bl-none text-sm flex items-center gap-2">
+                                <svg className="animate-spin h-4 w-4 text-sky-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                回答を生成中... (ファイルを検索しています)
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+            <div className={`p-4 border-t border-slate-200 bg-white rounded-b-2xl ${showHistory ? 'hidden' : ''}`}>
                 <div className="flex space-x-2">
                     <input
                         type="text"

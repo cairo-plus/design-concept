@@ -51,6 +51,77 @@ export default function Dashboard() {
   // State for file processing status (key: file path, value: status)
   const [fileStatus, setFileStatus] = useState<{ [path: string]: "processing" | "ready" }>({});
 
+  // History State for Output
+  const [viewMode, setViewMode] = useState<"generated" | "history">("generated");
+  const [outputHistory, setOutputHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Fetch Output History
+  const fetchOutputHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const { data: items } = await client.models.InteractionHistory.list({
+        authMode: "userPool"
+      });
+      const drafts = items
+        .filter(item => item.type === "DESIGN_DRAFT" && !item.isDeleted)
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      setOutputHistory(drafts);
+    } catch (e) {
+      console.error("Failed to fetch history", e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (viewMode === "history") {
+      fetchOutputHistory();
+    }
+  }, [viewMode]);
+
+  const loadHistoryItem = (item: any) => {
+    try {
+      if (typeof item.response === 'string') {
+        const data = JSON.parse(item.response);
+        setGeneratedData(data);
+        setViewMode("generated");
+      }
+    } catch (e) {
+      console.error("Failed to parse history item", e);
+      alert("データの読み込みに失敗しました");
+    }
+  };
+
+  const deleteOutputItem = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm("この履歴を削除しますか？")) return;
+    try {
+      await client.models.InteractionHistory.update({
+        id,
+        isDeleted: true
+      });
+      setOutputHistory(prev => prev.filter(item => item.id !== id));
+    } catch (e) {
+      console.error("Failed to delete item", e);
+    }
+  };
+
+  const deleteAllOutputHistory = async () => {
+    if (!confirm("履歴をすべて削除しますか？\n(データベースからは完全に削除されませんが、ここからは見えなくなります)")) return;
+    try {
+      await Promise.all(outputHistory.map(item =>
+        client.models.InteractionHistory.update({
+          id: item.id,
+          isDeleted: true
+        })
+      ));
+      setOutputHistory([]);
+    } catch (e) {
+      console.error("Failed to delete all items", e);
+    }
+  };
+
   // Poll for processing status (Simulation based on time)
   useEffect(() => {
     const updateStatus = () => {
@@ -338,10 +409,7 @@ If specific data is not found, infer reasonable engineering defaults or state "N
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3 text-sm justify-end text-right">
-            <Link href="/history" className="text-sky-100 hover:text-white font-semibold mr-4 flex items-center gap-1 transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              履歴を見る
-            </Link>
+
             <div className="leading-tight">
               <p className="font-semibold">{user?.signInDetails?.loginId || user?.username || "User"}</p>
               <p className="text-[11px] text-sky-50/90">ログイン中</p>
@@ -510,60 +578,134 @@ If specific data is not found, infer reasonable engineering defaults or state "N
 
             {/* Output View */}
             <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 min-h-[500px] flex flex-col">
-              <div className="mb-4 inline-flex flex-col text-xl font-semibold uppercase text-sky-700">
-                <span className="fade-in-up">出力</span>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="inline-flex flex-col text-xl font-semibold uppercase text-sky-700">
+                  <span className="fade-in-up">出力</span>
+                  <span
+                    className="fade-in-up mt-1 h-[3px] w-40 rounded-full bg-sky-700"
+                    aria-hidden="true"
+                  />
+                </div>
 
-                <span
-                  className="fade-in-up mt-1 h-[3px] w-40 rounded-full bg-sky-700"
-                  aria-hidden="true"
-                />
+                <div className="flex bg-slate-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewMode("generated")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${viewMode === "generated" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    生成結果
+                  </button>
+                  <button
+                    onClick={() => setViewMode("history")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${viewMode === "history" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    履歴
+                  </button>
+                </div>
               </div>
 
-              {generatedData ? (
-                <DesignConceptOutput
-                  data={generatedData}
-                  onDownload={() => { }}
-                />
-              ) : (
-                <div className="flex-1 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center p-8">
-                  <div className="text-center text-slate-500">
-                    {isGenerating ? (
-                      <>
-                        <svg className="w-16 h-16 mx-auto mb-4 text-sky-500 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <p className="text-lg font-semibold text-slate-900">生成中...</p>
-                        <p className="text-sm mt-2 text-slate-600">
-                          S3ファイル解析・Bedrock推論を実行中<br />
-                          (時間がかかる場合があります)
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                        <p className="text-lg font-semibold text-slate-900">まだ生成されていません</p>
-                        <p className="text-sm mt-2 max-w-sm mx-auto text-slate-600">
-                          {uploadedCount === 0
-                            ? "左側のパネルから資料をアップロードしてください"
-                            : "「構想書を生成」ボタンを押して設計構想書を生成してください"
-                          }
-                        </p>
-                        <button
-                          onClick={handleGenerate}
-                          disabled={uploadedCount === 0}
-                          className={`mt-6 rounded-full px-6 py-2.5 text-sm font-semibold transition-all shadow-sm ${uploadedCount === 0
-                            ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                            : "bg-sky-600 text-white hover:bg-sky-500"
-                            }`}
-                        >
-                          構想書を生成
-
-                        </button>
-                      </>
+              {viewMode === "history" ? (
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+                    <h3 className="text-sm font-semibold text-slate-600">過去の生成履歴</h3>
+                    {outputHistory.length > 0 && (
+                      <button
+                        onClick={deleteAllOutputHistory}
+                        className="text-xs text-red-500 hover:text-red-700 hover:underline"
+                      >
+                        履歴をすべて削除
+                      </button>
                     )}
                   </div>
+
+                  {loadingHistory ? (
+                    <div className="flex justify-center p-12">
+                      <div className="animate-spin h-8 w-8 border-b-2 border-sky-600 rounded-full"></div>
+                    </div>
+                  ) : outputHistory.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 h-64">
+                      <p>履歴はありません</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 overflow-y-auto max-h-[600px] pr-2 custom-scrollbar">
+                      {outputHistory.map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => loadHistoryItem(item)}
+                          className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 hover:bg-sky-50 transition cursor-pointer group bg-white"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded">
+                                {JSON.parse(item.response)?.componentName || "不明なコンポーネント"}
+                              </span>
+                              <span className="text-xs text-slate-400">
+                                {new Date(item.createdAt).toLocaleDateString("ja-JP")} {new Date(item.createdAt).toLocaleTimeString("ja-JP", { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <button
+                              onClick={(e) => deleteOutputItem(e, item.id)}
+                              className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition p-1"
+                              title="削除"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            <span>使用ソース: {item.usedSources?.length || 0}件</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+              ) : (
+                generatedData ? (
+                  <DesignConceptOutput
+                    data={generatedData}
+                    onDownload={() => { }}
+                  />
+                ) : (
+                  <div className="flex-1 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center p-8">
+                    <div className="text-center text-slate-500">
+                      {isGenerating ? (
+                        <>
+                          <svg className="w-16 h-16 mx-auto mb-4 text-sky-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <p className="text-lg font-semibold text-slate-900">生成中...</p>
+                          <p className="text-sm mt-2 text-slate-600">
+                            S3ファイル解析・Bedrock推論を実行中<br />
+                            (時間がかかる場合があります)
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          <p className="text-lg font-semibold text-slate-900">まだ生成されていません</p>
+                          <p className="text-sm mt-2 max-w-sm mx-auto text-slate-600">
+                            {uploadedCount === 0
+                              ? "左側のパネルから資料をアップロードしてください"
+                              : "「構想書を生成」ボタンを押して設計構想書を生成してください"
+                            }
+                          </p>
+                          <button
+                            onClick={handleGenerate}
+                            disabled={uploadedCount === 0}
+                            className={`mt-6 rounded-full px-6 py-2.5 text-sm font-semibold transition-all shadow-sm ${uploadedCount === 0
+                              ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                              : "bg-sky-600 text-white hover:bg-sky-500"
+                              }`}
+                          >
+                            構想書を生成
+
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
               )}
             </div>
           </section>

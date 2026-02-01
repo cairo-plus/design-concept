@@ -22,6 +22,7 @@ const schema = a.schema({
         response: a.string().required(),
         usedSources: a.string().array(),
         createdAt: a.datetime(),
+        isDeleted: a.boolean(), // Soft delete flag
     })
         .authorization(allow => [allow.owner()]),
 
