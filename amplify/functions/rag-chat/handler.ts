@@ -26,16 +26,18 @@ interface ChatResponse {
 }
 
 interface ChunkMetadata {
-    source?: string;
+    source: string;
     doc_type?: string;
     heading?: string;
+    url?: string;
+    score?: number; // Rerank score
     [key: string]: any;
 }
 
 interface Chunk {
     id: string;
     text: string;
-    metadata?: ChunkMetadata;
+    metadata: ChunkMetadata;
 }
 
 // Priority Definition
@@ -62,7 +64,131 @@ const DOC_TYPE_LABELS: Record<string, string> = {
     technical_paper: "技術資料 (Technical Document)",
     competitor_benchmark: "競合比較 (Competitor Benchmark)",
     reflex_rules: "脊髄反射ルール (Reflex Rule)",
+    web_search: "Web検索結果 (Internet Search)",
 };
+
+/**
+ * Tavily API for Web Search
+ */
+async function searchWeb(query: string): Promise<Chunk[]> {
+    const apiKey = process.env.TAVILY_API_KEY;
+    if (!apiKey) {
+        console.warn("TAVILY_API_KEY is not set. Skipping web search.");
+        return [];
+    }
+
+    // Simple heuristic: Only search if query implies outside knowledge or explicitly asks for it
+    // But for now, let's search if the query is reasonably long or contains "latest"/"2025" etc.
+    const needsSearch = query.length > 5; // Search for almost everything to be safe, or refine heuristic
+    if (!needsSearch) return [];
+
+    console.log(`Executing Web Search for: ${query}`);
+
+    try {
+        const response = await fetch("https://api.tavily.com/search", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                api_key: apiKey,
+                query: query,
+                search_depth: "advanced",
+                include_answer: true,
+                max_results: 5,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Tavily API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const results = data.results || [];
+
+        return results.map((r: any, i: number) => ({
+            id: `web-search-${i}`,
+            text: `Title: ${r.title}\nURL: ${r.url}\nContent: ${r.content}`,
+            metadata: {
+                source: `Web: ${r.title}`,
+                doc_type: "web_search",
+                url: r.url,
+                heading: r.title
+            }
+        }));
+
+    } catch (error) {
+        console.error("Web Search Failed:", error);
+        return [];
+    }
+}
+
+/**
+ * LLM-based Reranker
+ * Uses Claude 3 Haiku (fast) or Sonnet to score relevance.
+ */
+async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
+    if (chunks.length === 0) return [];
+
+    // Limited Reranking to save cost/latency: Top 50 chunks max
+    const candidates = chunks.slice(0, 50);
+
+    console.log(`Reranking ${candidates.length} chunks...`);
+
+    const prompt = `You are a Relevance Ranking Assistant.
+    Query: "${query}"
+    
+    Rate the RELEVANCE of each document chunk to the query on a scale of 0 to 10.
+    10 = Perfect answer / Highly relevant facts
+    0 = Completely irrelevant
+    
+    Output ONLY valid JSON in this format:
+    {"scores": [{"id": "chunk_id", "score": 9}, ...]}
+    
+    Chunks to evaluate:
+    ${JSON.stringify(candidates.map(c => ({ id: c.id, text: c.text.substring(0, 500) })))}
+    `;
+
+    const payload = {
+        modelId: "anthropic.claude-3-haiku-20240307-v1:0", // Fast model for reranking
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 4000,
+            system: "You are a JSON-only API.",
+            messages: [{ role: "user", content: prompt }]
+        })
+    };
+
+    try {
+        const command = new InvokeModelCommand(payload);
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const jsonStr = responseBody.content[0].text;
+
+        // Extract JSON carefully
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return candidates; // Fallback to original order
+
+        const scores: { id: string, score: number }[] = JSON.parse(jsonMatch[0]).scores;
+
+        // Map scores back to chunks
+        const scoredChunks = candidates.map(chunk => {
+            const scoreItem = scores.find(s => s.id === chunk.id);
+            return { ...chunk, metadata: { ...chunk.metadata, score: scoreItem ? scoreItem.score : 0 } };
+        });
+
+        // Filter out low relevance (< 3) and Sort by score desc
+        return scoredChunks
+            .filter(c => (c.metadata.score || 0) >= 4) // Threshold
+            .sort((a, b) => (b.metadata.score || 0) - (a.metadata.score || 0));
+
+    } catch (e) {
+        console.error("Reranking failed, using original order:", e);
+        return candidates; // Fallback
+    }
+}
 
 export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     console.log("Received event:", JSON.stringify(event));
@@ -74,12 +200,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     }
 
     try {
-        // 1. Fetch chunks
+        // 1. Fetch chunks from S3
         const citations: string[] = [];
-        const debugLogs: string[] = [];
-
-        console.log(`Received ${uploadedDocs.length} paths to process.`);
-
         const targetKeys = uploadedDocs.map((path) => {
             let target = path.replace("public/", "protected/");
             const lastDotIndex = target.lastIndexOf(".");
@@ -89,123 +211,88 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             return target + "_chunks.json";
         });
 
-        // Store all chunks to sort them later
         const allChunks: Chunk[] = [];
 
+        // Fetch S3 docs
         for (const key of targetKeys) {
             try {
-                const getCommand = new GetObjectCommand({
-                    Bucket: bucketName,
-                    Key: key,
-                });
+                const getCommand = new GetObjectCommand({ Bucket: bucketName, Key: key });
                 const response = await s3Client.send(getCommand);
                 if (!response.Body) continue;
-
                 const jsonStr = await response.Body.transformToString();
                 const fileChunks = JSON.parse(jsonStr);
-
                 if (Array.isArray(fileChunks)) {
                     allChunks.push(...fileChunks);
                 }
-
-                // Add to citations list (unique filenames)
+                // Citation tracking
                 const parts = key.split("/");
                 const fileName = parts[parts.length - 1].replace("_chunks.json", "");
-                if (!citations.includes(fileName)) {
-                    citations.push(fileName);
-                }
+                if (!citations.includes(fileName)) citations.push(fileName);
             } catch (e: any) {
                 console.warn(`Could not read chunk file ${key}: ${e.message}`);
             }
         }
 
-        // 2. Sort chunks by Priority
-        // Dynamic Priority Adjustment
-        let currentPriority = [...PRIORITY_ORDER];
-        for (const [type, keywords] of Object.entries(PRIORITY_KEYWORDS)) {
-            if (keywords.some(k => query.includes(k))) {
-                // Move this type to the front
-                currentPriority = [type, ...currentPriority.filter(t => t !== type)];
-                console.log(`Dynamic Priority: Promoted ${type} based on query keywords.`);
-                break;
+        // 2. Fetch Web Search Results
+        const webChunks = await searchWeb(query);
+        allChunks.push(...webChunks); // Add web results to pool
+
+        webChunks.forEach(wc => {
+            if (wc.metadata.url && !citations.includes(`Web: ${wc.metadata.heading}`)) {
+                citations.push(`[${wc.metadata.heading}](${wc.metadata.url})`);
             }
-        }
-
-        allChunks.sort((a, b) => {
-            const typeA = a.metadata?.doc_type || "unknown";
-            const typeB = b.metadata?.doc_type || "unknown";
-
-            const indexA = currentPriority.indexOf(typeA);
-            const indexB = currentPriority.indexOf(typeB);
-
-            // If both are in the priority list, lower index comes first
-            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            // If only A is in list, A comes first
-            if (indexA !== -1) return -1;
-            // If only B is in list, B comes first
-            if (indexB !== -1) return 1;
-
-            // Neither in list, keep original order
-            return 0;
         });
 
-        // 3. Construct Context with Headers
-        let context = "";
-        let currentType = "";
-        const MAX_CONTEXT_LENGTH = 150000; // Sonnet 4.5 has 200k context
+        // 3. Reranking (The core improvement)
+        // If we have too many chunks, strict reranking is needed.
+        // If few, we can skip or do light sorting.
+        let rankedChunks = await rerankChunks(query, allChunks);
 
-        for (const chunk of allChunks) {
+        // Fallback if rerank killed everything (too strict?)
+        if (rankedChunks.length === 0 && allChunks.length > 0) {
+            console.log("Reranking removed all chunks, recovering top original chunks.");
+            rankedChunks = allChunks.slice(0, 20);
+        }
+
+        // 4. Construct Context
+        let context = "";
+        const MAX_CONTEXT_LENGTH = 150000;
+
+        for (const chunk of rankedChunks) {
             if (context.length > MAX_CONTEXT_LENGTH) break;
 
-            const docType = chunk.metadata?.doc_type || "other";
+            const docType = chunk.metadata.doc_type || "other";
             const docLabel = DOC_TYPE_LABELS[docType] || "Other Documents";
+            const header = chunk.metadata.heading ? `[Heading: ${chunk.metadata.heading}]` : "";
+            const source = chunk.metadata.source ? `(Source: ${chunk.metadata.source})` : "";
+            const score = chunk.metadata.score ? `(Relevance: ${chunk.metadata.score}/10)` : "";
 
-            if (docType !== currentType) {
-                context += `\n\n=== SECTION: ${docLabel} ===\n`;
-                currentType = docType;
-            }
-
-            const header = chunk.metadata?.heading ? `[Heading: ${chunk.metadata.heading}]` : "";
-            const source = chunk.metadata?.source ? `(Source: ${chunk.metadata.source})` : "";
-
-            context += `\n${header} ${source}\n${chunk.text}\n`;
+            context += `\n=== SOURCE: ${docLabel} ${score} ===\n`;
+            context += `${header} ${source}\n${chunk.text}\n`;
         }
 
-        if (context.length === 0) {
-            context = "No relevant documents found.";
-        }
+        if (!context) context = "No relevant documents found.";
 
-        // 4. Construct Prompt for Bedrock
-        const systemPrompt = `You are a sophisticated design assistant provided by "Antigravity". 
+        // 5. Final Generation
+        const systemPrompt = `You are a sophisticated Design Assistant (設計アシスタント). 
     Answer the user's question using the provided context documents.
-
+    
     ## Thinking Process
-    Before answering, analyze the user's request and the provided documents step-by-step.
     1. Identify the core question and any specific constraints (e.g. "latest regulations").
     2. Scan the provided context for relevant keywords and concepts.
-    3. Evaluate the reliability and priority of the information sources based on the Citation Rules.
+    3. Evaluate the reliability and priority. **Web Search results are highly reliable for latest trends/news (2024-2025).**
     4. Formulate your answer based ONLY on the evidence.
-    
-    Put your thinking process inside <thinking> tags.
-    Put your final user-facing answer inside <answer> tags.
     
     ## Citation Rules (STRICT)
     You MUST prioritize information and citations in this order:
-    1. 設計構想書 (Design Concept) - **Highest Priority**
-    2. 商品計画書 (Merchandise Plan)
-    3. 製品企画書 (Product Plan)
-    4. 法規リスト (Regulation List)
-    5. Other documents
+    1. Web Search Results (for latest regulations/trends)
+    2. 設計構想書 (Design Concept)
+    3. 商品計画書 (Merchandise Plan)
+    4. 製品企画書 (Product Plan)
+    5. 法規リスト (Regulation List)
     
     When citing, explicitly mention the document type and name.
-    Example: "According to the Design Concept (File A)..."
-    
-    ## Fallback / Research Simulation
-    If the provided documents DO NOT contain the answer:
-    1. Do NOT make up information from the documents.
-    2. Instead, use your general knowledge to "search" for the answer.
-    3. Use the format: "【ウェブ検索（シミュレーション）】" followed by the answer.
-    4. Explicitly cite the likely source of this general knowledge (e.g., "Source: UN Regulation No. 123", "Source: Toyota Global Website").
+    Example: "According to the Design Concept (File A)..." or "As seen in the Web Search Result [Title](URL)..."
     
     Current Date: ${new Date().toISOString()}
     `;
@@ -216,11 +303,12 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     Question: ${query}`;
 
         // Invoke Bedrock
-        const modelId = "anthropic.claude-sonnet-4-5-20250929-v1:0";
+        // Cross-Region Inference Profile for Claude 3.5 Sonnet v2 (US Region)
+        const modelId = "us.anthropic.claude-3-5-sonnet-20241022-v2:0";
 
         const payload = {
             anthropic_version: "bedrock-2023-05-31",
-            max_tokens: 2000,
+            max_tokens: 3000,
             system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
         };
@@ -237,39 +325,37 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             bedrockResponse = await bedrockClient.send(invokeCommand);
         } catch (e: any) {
             console.error("Bedrock Invoke Error:", e);
-            // Fallback to 3.5 Sonnet if 4.5 is not available/errored
-            if (e.message && (e.message.includes("ResourceNotFound") || e.message.includes("AccessDenied") || e.message.includes("ValidationException") || e.message.includes("supported"))) {
-                console.log("Claude 4.5 Sonnet failed, falling back to 3.5 Sonnet...");
-                try {
-                    const fallbackInvokeCmd = new InvokeModelCommand({
-                        modelId: "anthropic.claude-3-5-sonnet-20240620-v1:0",
-                        contentType: "application/json",
-                        accept: "application/json",
-                        body: JSON.stringify(payload),
-                    });
-                    bedrockResponse = await bedrockClient.send(fallbackInvokeCmd);
-                } catch (fallbackError: any) {
-                    throw new Error(`Bedrock Fallback Error: ${fallbackError.message}`);
-                }
-            } else {
-                throw new Error(`Bedrock Error: ${e.message}`);
+            // Fallback to older 3.5 Sonnet (Tokyo Region / Standard) if Cross-Region fails
+            console.log("Cross-Region Inference failed, falling back to standard 3.5 Sonnet...");
+            try {
+                const fallbackCmd = new InvokeModelCommand({
+                    modelId: "anthropic.claude-3-5-sonnet-20240620-v1:0", // Standard Tokyo ID
+                    contentType: "application/json",
+                    accept: "application/json",
+                    body: JSON.stringify(payload),
+                });
+                bedrockResponse = await bedrockClient.send(fallbackCmd);
+            } catch (fallbackError: any) {
+                // Last resort: Haiku
+                console.log("3.5 Sonnet failed, falling back to Haiku...");
+                const haikuCmd = new InvokeModelCommand({
+                    modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+                    contentType: "application/json",
+                    accept: "application/json",
+                    body: JSON.stringify(payload),
+                });
+                bedrockResponse = await bedrockClient.send(haikuCmd);
             }
         }
 
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
-        const rawText = responseBody.content[0].text;
-
-        // Extract answer from tags if present
-        const answerMatch = rawText.match(/<answer>([\s\S]*?)<\/answer>/);
-        let answer = answerMatch ? answerMatch[1].trim() : rawText;
-
-        // Clean up thinking tags if they leaked into the fallback
-        answer = answer.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
+        const answer = responseBody.content[0].text;
 
         return {
             answer,
-            citations,
+            citations, // This now includes Web URLs
         };
+
     } catch (error: any) {
         console.error("Handler error:", error);
         return {
