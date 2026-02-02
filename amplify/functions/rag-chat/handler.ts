@@ -93,6 +93,118 @@ const DOC_TYPE_LABELS: Record<string, string> = {
  * 4. Document Type Priority
  * 5. Recency (Dates)
  */
+/**
+ * Query Expansion
+ * Uses Claude 3 Haiku to generate synonyms and related terms.
+ */
+async function generateSearchQueries(originalQuery: string): Promise<string[]> {
+    // Skip expansion for very short queries
+    if (originalQuery.length < 3) return [originalQuery];
+
+    const prompt = `You are a Search Specialist.
+    User Query: "${originalQuery}"
+
+    Generate 3 alternative search queries to find relevant information in technical documentation (design specs, regulations, plans) or web search.
+    - Include synonyms (e.g., "spec" -> "specification", "dimensions").
+    - Break down complex questions.
+    - Keep them short and specific.
+
+    Output JSON ONLY: ["query1", "query2", "query3"]`;
+
+    const payload = {
+        modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 300,
+            system: "You are a JSON-only API.",
+            messages: [{ role: "user", content: prompt }]
+        })
+    };
+
+    try {
+        const command = new InvokeModelCommand(payload);
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const jsonMatch = responseBody.content[0].text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+            const queries = JSON.parse(jsonMatch[0]);
+            console.log(`Query Expanded: "${originalQuery}" -> ${JSON.stringify(queries)}`);
+            return [originalQuery, ...queries];
+        }
+        return [originalQuery];
+    } catch (e) {
+        console.warn("Query expansion failed:", e);
+        return [originalQuery];
+    }
+}
+
+/**
+ * Intelligent Web Search Router
+ * Decides if the query requires external information.
+ */
+async function shouldTriggerWebSearch(query: string): Promise<boolean> {
+    // 1. Rule-based triggers (Fast & Cheap)
+    const forcedKeywords = [
+        "stock", "price", "株価",
+        "news", "trend", "latest", "最新",
+        "2025", "2026", "future", "将来",
+        "competitor", "market", "市場"
+    ];
+    const lowercaseQuery = query.toLowerCase();
+    if (forcedKeywords.some(kw => lowercaseQuery.includes(kw))) {
+        console.log("Web Search Triggered by Keyword Rule.");
+        return true;
+    }
+
+    // 2. LLM Router (Claude Haiku) - Low latency check
+    const prompt = `You are a Router.
+    Query: "${query}"
+
+    Does this query strictly require REAL-TIME external information (e.g., current stock prices, breaking news, 2025/2026 future trends not in static docs)?
+    Answer TRUE only if internal static documents (design specs, older regulations) are definitely insufficient.
+    
+    Output JSON ONLY: {"search": true/false}`;
+
+    const payload = {
+        modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 100,
+            system: "You are a JSON-only API.",
+            messages: [{ role: "user", content: prompt }]
+        })
+    };
+
+    try {
+        const command = new InvokeModelCommand(payload);
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const jsonMatch = responseBody.content[0].text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]).search;
+            console.log(`Router Decision: ${result}`);
+            return result === true;
+        }
+    } catch (e) {
+        console.warn("Router failed:", e);
+    }
+
+    return false;
+}
+
+/**
+ * Keyword-based Sorting (Enhanced)
+ * Scored based on:
+ * 1. Term frequency in body
+ * 2. Term frequency in heading (High Boost)
+ * 3. Exact phrase matches
+ * 4. Document Type Priority
+ * 5. Recency (Dates)
+ */
 function keywordBasedSort(query: string, chunks: Chunk[]): Chunk[] {
     const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
     const queryLower = query.toLowerCase();
@@ -207,48 +319,50 @@ async function searchWeb(query: string): Promise<Chunk[]> {
 }
 
 /**
- * Smart Reranker
+ * Smart Reranker (Improved CoT)
  * Uses keyword-based sorting for small sets, AI reranking for larger sets.
  */
 async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
     if (chunks.length === 0) return [];
 
-    // OPTIMIZATION: Use simple keyword sorting for small chunk sets
-    const SMART_RERANK_THRESHOLD = 15;
+    // OPTIMIZATION: Use simple keyword sorting for very small chunk sets
+    const SMART_RERANK_THRESHOLD = 10;
 
     if (chunks.length < SMART_RERANK_THRESHOLD) {
         console.log(`Small chunk set (${chunks.length}). Using keyword-based sorting only.`);
         return keywordBasedSort(query, chunks);
     }
 
-    // CRITICAL FIX: Sort ALL chunks by keyword relevance FIRST, then slice top 50 for AI reranking.
-    // Previously: candidate = chunks.slice(0, 50) -> this arbitrarily dropped relevant docs if they were loaded later.
+    // Sort by keyword relevance FIRST
     const sortedCandidates = keywordBasedSort(query, chunks);
 
-    // Limited Reranking to save cost/latency: Top 50 of the BEST keyword matches
+    // Filter Top 50 best matches for AI Reranking
     const candidates = sortedCandidates.slice(0, 50);
 
     console.log(`Large chunk set. AI reranking ${candidates.length} chunks...`);
 
-    const prompt = `You are a Relevance Ranking Assistant.
+    const prompt = `You are a Relevance Ranking Expert.
     Query: "${query}"
     
-    Rate the RELEVANCE of each document chunk to the query on a scale of 0 to 10.
-    10 = Perfect answer / Highly relevant facts
-    0 = Completely irrelevant
+    Task: Rank the following document chunks based on their relevance to the query.
     
-    Output ONLY valid JSON in this format:
-    Output ONLY valid JSON in this format:
-    {"scores": [{"id": "chunk_id", "score": 9, "reason": "brief reason"}, ...]}
+    <rules>
+    1. **Exact Answer**: Give scores 9-10 to chunks that directly answer the specific question.
+    2. **Context**: Give scores 6-8 to chunks that provide necessary background or partial answers.
+    3. **Term Match**: Give scores 3-5 to chunks that share keywords but discuss different topics.
+    4. **Irrelevant**: Give scores 0-2 to unrelated chunks.
+    5. **Priority**: Boost "Regulation" and "Design Intent" documents by +1 point.
+    </rules>
     
-    Scoring Criteria:
-    - 9-10: Exact answer or highly specific detail directly addressing the query.
-    - 7-8: Strongly relevant context or related facts.
-    - 4-6: General topic relevance but lacks specifics.
-    - 0-3: Irrelevant or completely different topic.
+    Evaluate each chunk. Output JSON ONLY.
+    format: {"scores": [{"id": "chunk_id", "score": 9, "thinking": "brief reasoning"}, ...]}
     
-    Chunks to evaluate:
-    ${JSON.stringify(candidates.map(c => ({ id: c.id, text: c.text.substring(0, 500) })))}
+    Chunks:
+    ${JSON.stringify(candidates.map(c => ({
+        id: c.id,
+        text: c.text.substring(0, 600), // Limit text size
+        type: c.metadata.doc_type || "unknown"
+    })))}
     `;
 
     const payload = {
@@ -282,9 +396,8 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
         });
 
         // Filter out low relevance and Sort by score desc
-        // OPTIMIZATION: Lowered threshold from 4 to 3 for better recall
         return scoredChunks
-            .filter(c => (c.metadata.score || 0) >= 3) // Threshold (lowered to improve recall)
+            .filter(c => (c.metadata.score || 0) >= 3)
             .sort((a, b) => (b.metadata.score || 0) - (a.metadata.score || 0));
 
     } catch (e) {
@@ -292,6 +405,7 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
         return candidates; // Fallback
     }
 }
+
 
 /**
  * Retrieval Evaluator (CRAG)
@@ -364,6 +478,17 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     const citations: string[] = [];
 
     try {
+        // --- 0. Query Expansion & Routing ---
+        // Parallel execution for speed
+        const [expandedQueries, shouldWeb] = await Promise.all([
+            generateSearchQueries(query),
+            shouldTriggerWebSearch(query)
+        ]);
+
+        // Use a combined query for keyword matching (to catch synonyms)
+        const enrichedQuery = expandedQueries.join(" ");
+        console.log(`Enriched Query for Reranking: "${enrichedQuery}"`);
+
         // --- 1. Fetch chunks from S3 ---
         const targetKeys = uploadedDocs.map((path) => {
             let target = path.replace("public/", "protected/");
@@ -405,41 +530,29 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             }
         });
 
-        // --- 2. Smart Evaluation & Conditional Web Search (CRAG) ---
+        // --- 2. Smart Evaluation & Web Search ---
         let webChunks: Chunk[] = [];
+        let performWebSearch = shouldWeb;
 
-        // Always search if no S3 docs found
-        let shouldSearchWeb = allChunks.length === 0;
-        let evalReason = "No internal documents found.";
-
-        if (!shouldSearchWeb) {
-            // OPTIMIZATION: Skip expensive AI evaluation if we have good keyword matches
-            const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
-            const chunksWithMatches = allChunks.filter(chunk => {
-                const textLower = chunk.text.toLowerCase();
-                return queryTerms.some(term => textLower.includes(term));
-            });
-
-            // OPTIMIZATION: Lowered from 10 to 5 for more careful evaluation
-            const SUFFICIENT_CHUNK_THRESHOLD = 5;
-
-            if (chunksWithMatches.length >= SUFFICIENT_CHUNK_THRESHOLD) {
-                // We have plenty of documents with keyword matches - skip AI evaluation
-                console.log(`Sufficient internal documents found (${chunksWithMatches.length} with keyword matches). Skipping CRAG evaluation.`);
-                shouldSearchWeb = false;
-                evalReason = "Sufficient internal documents with keyword matches.";
-            } else {
-                // We have some docs but not many matches - skip web search anyway for simplicity
-                shouldSearchWeb = false;
-                evalReason = "Some internal documents found.";
-                console.log(`Skipping web search: ${evalReason}`);
-            }
+        // If internal docs are missing, force search
+        if (allChunks.length === 0) {
+            performWebSearch = true;
+            console.log("No internal documents found. Forcing Web Search.");
         }
 
-        if (shouldSearchWeb) {
-            answerText += "Insufficient information found. Searching the web...\n\n";
+        if (performWebSearch) {
+            // Logic to inform user if we are searching for external info
+            if (shouldWeb) {
+                // If it was triggered by 'stock' or 'news', we don't necessarily apologize.
+                answerText += "Retrieving latest information from the web...\n\n";
+            } else {
+                answerText += "Insufficient internal info. Searching the web...\n\n";
+            }
+
             try {
-                webChunks = await searchWeb(query);
+                // Use the most specific expanded query if available, or original
+                const searchQ = query;
+                webChunks = await searchWeb(searchQ);
                 console.log(`Web search returned ${webChunks.length} chunks.`);
                 if (webChunks.length > 0) {
                     citations.push(...webChunks.map(c => c.metadata.source).filter((v, i, a) => a.indexOf(v) === i));
@@ -450,7 +563,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             }
         }
 
-        // --- 3. Combine all chunks & Rerank ---
+        // --- 3. Combine & Rerank ---
         const combinedChunks = [...allChunks, ...webChunks];
 
         if (combinedChunks.length === 0) {
@@ -460,14 +573,14 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             };
         }
 
-        const rankedChunks = await rerankChunks(query, combinedChunks);
+        // Pass the ENRICHED query (synonyms) to the reranker for better keyword matching
+        // The AI inside rerank might see the synonyms, which is helpful context
+        const rankedChunks = await rerankChunks(enrichedQuery, combinedChunks);
         console.log(`Reranked ${rankedChunks.length} chunks.`);
 
         // --- 4. Build context for LLM ---
-        // OPTIMIZATION: Dynamic TOP_K based on query complexity
         const queryComplexity = query.split(/\s+/).filter(t => t.length > 0).length;
         const TOP_K = Math.min(30, Math.max(10, queryComplexity * 2));
-        console.log(`Using dynamic TOP_K=${TOP_K} for query with ${queryComplexity} terms`);
         const topChunks = rankedChunks.slice(0, TOP_K);
 
         let context = "";
@@ -478,26 +591,28 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             context += `[${idx + 1}] (${source})${heading ? ` - ${heading}` : ""}${scoreStr}\n${chunk.text.trim()}\n\n`;
         });
 
+        // --- 5. Generate Answer (Improved System Prompt) ---
         const systemPrompt = `You are a helpful design assistant for the Configurator Project.
-Answer the user's question based ONLY on the provided context.
+Answering based on the provided context.
 
-Rules:
-1. **Prioritize Official Documents**: Trust "Regulation", "Merchandise Plan", and "Design Intent" documents over others.
-2. **Admit Ignorance**: If the provided context does NOT contain the answer, say "Provided documents do not contain this information" (or Japanese equivalent). Do NOT guess or hallucinate.
-3. **Citations**: Always cite sources using [source name] when referencing information.
-4. **Language**: Answer in Japanese efficiently and politely.
+<instructions>
+1. **Context First**: Answer based ONLY on the provided context documents.
+2. **Prioritize Official Docs**: Trust "Regulation", "Merchandise Plan", and "Design Intent" documents over others.
+3. **Handle Conflicts**: If Web Search results contradict Internal Documents regarding company specifics, trust Internal Documents. For general news/trends, trust Web Search.
+4. **Citations**: Always cite sources using [source name] when referencing information.
+5. **No Hallucination**: If the answer is not in the context, say "Provided documents do not contain this information".
+6. **Thinking Process**: You MUST think step-by-step before answering. Wrap your thought process in <thinking> tags. This will not be shown to the user, but helps accuracy.
+7. **Language**: Answer in Japanese efficiently and politely.
+</instructions>
 
 Format your response in markdown.`;
 
         const contextMessage = `Context Priority (Top to Bottom):
     ${context}`;
 
-        // Use Claude 3.5 Sonnet v1 - v2 doesn't support on-demand throughput in ap-northeast-1
         console.log("Using Model ID: anthropic.claude-3-5-sonnet-20240620-v1:0");
         const modelId = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 
-        // NOTE: Prompt Caching is disabled because Claude 3.5 Sonnet v1 doesn't support it
-        // Only v2 supports prompt caching, but v2 doesn't support on-demand throughput in Tokyo
         const payload = {
             anthropic_version: "bedrock-2023-05-31",
             max_tokens: 3000,
@@ -547,16 +662,13 @@ Format your response in markdown.`;
             }
         } catch (e: any) {
             console.error("Bedrock Stream Error:", e);
-
-            // Check if it's a rate limit error (429)
             if (e.name === 'ThrottlingException' || e.$metadata?.httpStatusCode === 429) {
-                answerText += `\n\n申し訳ございません。現在リクエストが集中しているため、少し時間をおいてから再度お試しください。\n\n(Error: Too many requests - please wait a moment and try again)\n`;
+                answerText += `\n\n申し訳ございません。現在リクエストが集中しているため、少し時間をおいてから再度お試しください。\n`;
             } else {
-                answerText += `\n\n回答の生成中にエラーが発生しました: ${e.message}\n\n(Error generating response: ${e.message})\n`;
+                answerText += `\n\n回答の生成中にエラーが発生しました: ${e.message}\n`;
             }
         }
 
-        // Append Citations
         if (citations.length > 0) {
             answerText += `\n\n---\n**参考資料:**\n`;
             citations.forEach(c => answerText += `- ${c}\n`);
@@ -572,3 +684,5 @@ Format your response in markdown.`;
         citations: citations
     };
 };
+
+

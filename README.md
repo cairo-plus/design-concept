@@ -194,8 +194,7 @@ graph TD
     end
 
     subgraph Generation Phase
-    Context -->|With Cache Control| Generator[AWS Bedrock: Claude 3.5 Sonnet v2]
-    Generator -->|Prompt Cache Hit| FastGen[90% Cost Reduction]
+    Context -->|With Instructions| Generator[AWS Bedrock: Claude 3.5 Sonnet v1]
     Generator -->|Streaming Tokens| Lambda
     end
 
@@ -211,7 +210,7 @@ graph TD
 
 1.  **Retrieval (検索) with Smart Evaluation**: 
     *   S3からアップロード資料のチャンクを取得
-    *   **キーワード事前評価**: 10個以上のキーワードマッチがある場合、AI評価をスキップ（**50-70%のAPI呼び出し削減**）
+    *   **キーワード事前評価**: 5個以上のキーワードマッチがある場合、AI評価をスキップ（**50-70%のAPI呼び出し削減**）
     *   **Conditional CRAG**: 必要な場合のみClaude 3 Haikuで精密評価し、不十分な時だけTavily APIでWeb検索
     
 2.  **Smart Reranking (再ランク付け) with Conditional AI**: 
@@ -219,10 +218,9 @@ graph TD
     *   **チャンク数 ≥ 15**: Claude 3 Haikuで関連度を0-10点で採点し、高スコアのチャンクを選別
     *   優先度と関連度の両方を考慮した最適なコンテキスト構築
     
-3.  **Generation (生成) with Prompt Caching**: 
-    *   **Prompt Caching**: システムプロンプトと長いコンテキストをキャッシュ
-    *   **キャッシュヒット時**: コスト90%削減 + レスポンス高速化
-    *   選別された「濃い」情報をClaude 3.5 Sonnet v2に渡して回答を生成
+3.  **Generation (生成)**: 
+    *   **Standard Generation**: 最新のClaude 3.5 Sonnet v1を使用
+    *   選別された「濃い」情報を渡して回答を生成
     *   **ハルシネーション（嘘）を防止**し、**最新情報**も含めた高精度な回答を実現
 
 ### 🚀 最適化効果
@@ -231,7 +229,6 @@ graph TD
 |-----|---------|---------|-------|
 | 平均API呼び出し数/チャット | 3回 | 1-2回 | **40-50%削減** |
 | 簡単な質問のコスト | 100% | 33% | **67%削減** |
-| キャッシュヒット時のコスト | - | 10% | **90%削減** |
 | レート制限エラー | 頻発 | ほぼゼロ | **95%以上改善** |
 | リコール（情報網羅性） | 100% | 110-115% | **+10-15%向上** |
 | 動的コンテキスト調整 | 固定20 | 10-30 | **最大+50%** |
