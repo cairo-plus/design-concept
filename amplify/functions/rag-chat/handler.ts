@@ -336,8 +336,8 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
     // Sort by keyword relevance FIRST
     const sortedCandidates = keywordBasedSort(query, chunks);
 
-    // Filter Top 50 best matches for AI Reranking
-    const candidates = sortedCandidates.slice(0, 50);
+    // Filter Top 40 best matches for AI Reranking
+    const candidates = sortedCandidates.slice(0, 40);
 
     console.log(`Large chunk set. AI reranking ${candidates.length} chunks...`);
 
@@ -407,55 +407,7 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
 }
 
 
-/**
- * Retrieval Evaluator (CRAG)
- * Uses Claude 3 Haiku to check if retrieved documents are sufficient.
- */
-async function evaluateRetrieval(query: string, chunks: Chunk[]): Promise<{ sufficient: boolean; reason: string }> {
-    if (chunks.length === 0) return { sufficient: false, reason: "No documents found." };
 
-    // Optimize: Only check top 5 most relevant chunks (by simple keyword match) to save tokens
-    const candidates = chunks.slice(0, 5);
-
-    const prompt = `You are a Retrieval Evaluator.
-    Query: "${query}"
-    
-    Review the following document snippets. Determine if they contain sufficient information to answer the query effectively.
-    
-    Snippets:
-    ${JSON.stringify(candidates.map(c => c.text.substring(0, 300)))}
-    
-    Return ONLY valid JSON:
-    {"sufficient": true/false, "reason": "brief explanation"}
-    `;
-
-    const payload = {
-        modelId: "anthropic.claude-3-haiku-20240307-v1:0",
-        contentType: "application/json",
-        accept: "application/json",
-        body: JSON.stringify({
-            anthropic_version: "bedrock-2023-05-31",
-            max_tokens: 1000,
-            system: "You are a JSON-only API. Be critical. If the exact answer isn't clear, return false.",
-            messages: [{ role: "user", content: prompt }]
-        })
-    };
-
-    try {
-        const command = new InvokeModelCommand(payload);
-        const response = await bedrockClient.send(command);
-        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-        const jsonStr = responseBody.content[0].text;
-        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
-        }
-        return { sufficient: false, reason: "Failed to parse evaluation." };
-    } catch (e) {
-        console.warn("Evaluation failed, defaulting to insufficient:", e);
-        return { sufficient: false, reason: "Evaluation error." };
-    }
-}
 
 
 export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
@@ -580,7 +532,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
         // --- 4. Build context for LLM ---
         const queryComplexity = query.split(/\s+/).filter(t => t.length > 0).length;
-        const TOP_K = Math.min(30, Math.max(10, queryComplexity * 2));
+        const TOP_K = Math.min(10, Math.max(5, queryComplexity * 2));
         const topChunks = rankedChunks.slice(0, TOP_K);
 
         let context = "";
