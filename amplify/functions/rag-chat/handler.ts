@@ -150,7 +150,10 @@ async function shouldTriggerWebSearch(query: string): Promise<boolean> {
         "stock", "price", "株価",
         "news", "trend", "latest", "最新",
         "2025", "2026", "future", "将来",
-        "competitor", "market", "市場"
+        "competitor", "market", "市場",
+        // Explicit requests for external info
+        "internet", "web", "google", "online",
+        "ネット", "インターネット", "ウェブ", "検索して", "調べて"
     ];
     const lowercaseQuery = query.toLowerCase();
     if (forcedKeywords.some(kw => lowercaseQuery.includes(kw))) {
