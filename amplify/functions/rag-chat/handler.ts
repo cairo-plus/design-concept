@@ -233,9 +233,10 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
             return { ...chunk, metadata: { ...chunk.metadata, score: scoreItem ? scoreItem.score : 0 } };
         });
 
-        // Filter out low relevance (< 3) and Sort by score desc
+        // Filter out low relevance and Sort by score desc
+        // OPTIMIZATION: Lowered threshold from 4 to 3 for better recall
         return scoredChunks
-            .filter(c => (c.metadata.score || 0) >= 4) // Threshold
+            .filter(c => (c.metadata.score || 0) >= 3) // Threshold (lowered to improve recall)
             .sort((a, b) => (b.metadata.score || 0) - (a.metadata.score || 0));
 
     } catch (e) {
@@ -371,7 +372,8 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
                 return queryTerms.some(term => textLower.includes(term));
             });
 
-            const SUFFICIENT_CHUNK_THRESHOLD = 10;
+            // OPTIMIZATION: Lowered from 10 to 5 for more careful evaluation
+            const SUFFICIENT_CHUNK_THRESHOLD = 5;
 
             if (chunksWithMatches.length >= SUFFICIENT_CHUNK_THRESHOLD) {
                 // We have plenty of documents with keyword matches - skip AI evaluation
@@ -414,7 +416,10 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         console.log(`Reranked ${rankedChunks.length} chunks.`);
 
         // --- 4. Build context for LLM ---
-        const TOP_K = 20;
+        // OPTIMIZATION: Dynamic TOP_K based on query complexity
+        const queryComplexity = query.split(/\s+/).filter(t => t.length > 0).length;
+        const TOP_K = Math.min(30, Math.max(10, queryComplexity * 2));
+        console.log(`Using dynamic TOP_K=${TOP_K} for query with ${queryComplexity} terms`);
         const topChunks = rankedChunks.slice(0, TOP_K);
 
         let context = "";
