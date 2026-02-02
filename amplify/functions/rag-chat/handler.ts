@@ -294,6 +294,10 @@ async function searchWeb(query: string): Promise<Chunk[]> {
                 search_depth: "advanced",
                 include_answer: true,
                 max_results: 5,
+                exclude_domains: [
+                    "youtube.com", "twitter.com", "x.com", "facebook.com", "instagram.com", "tiktok.com",
+                    "pinterest.com", "reddit.com", "quora.com", "chiebukuro.yahoo.co.jp"
+                ]
             }),
         });
 
@@ -582,7 +586,8 @@ Answering based on the provided context.
 1. **Context First**: Answer based ONLY on the provided context documents.
 2. **Prioritize Official Docs**: Trust "Regulation", "Merchandise Plan", and "Design Intent" documents over others.
 3. **Handle Conflicts**: If Web Search results contradict Internal Documents regarding company specifics, trust Internal Documents. For general news/trends, trust Web Search.
-4. **Citations**: Always cite sources using [source name] when referencing information.
+4. **Source Authority**: Prioritize government (.go.jp), academic (.ac.jp), and official corporate websites. Treat unknown blogs or forums with skepticism.
+5. **Citations**: Always cite sources using the [x] format locally within sentences.
 5. **No Hallucination**: If the answer is not in the context, say "Provided documents do not contain this information".
 6. **Thinking Process**: You MUST think step-by-step before answering. Wrap your thought process in <thinking> tags. This will not be shown to the user, but helps accuracy.
 7. **Language**: Answer in Japanese efficiently and politely.
@@ -602,7 +607,17 @@ Format your response in markdown.`;
             system: [
                 {
                     type: "text",
-                    text: systemPrompt
+                    text: systemPrompt + `
+IMPORTANT: You MUST cite your sources using the reference numbers provided in the context (e.g., [1], [2]).
+- When a sentence is based on a specific document, place the citation [x] at the end of that sentence.
+- If multiple sources support a statement, use [1][2].
+- Do not make up citations. Only use those provided in the context.
+
+Response Format:
+<answer>
+Your clear, helpful answer in Japanese here, with [x] citations included in the text...
+</answer>
+`
                 }
             ],
             messages: [
@@ -652,9 +667,24 @@ Format your response in markdown.`;
             }
         }
 
-        if (citations.length > 0) {
+        // Append the reference list (mapping [1] -> Source)
+        if (topChunks.length > 0) {
             answerText += `\n\n---\n**参考資料:**\n`;
-            citations.forEach(c => answerText += `- ${c}\n`);
+
+            // Deduplicate sources but keep their indices
+            const uniqueSources: string[] = [];
+            // We want to list all context items available so the user knows what [1] refers to.
+            // Or typically, we listing what was actually used is hard without parsing. 
+            // Better to list the Top K items provided as context.
+
+            topChunks.forEach((chunk, idx) => {
+                const sourceName = chunk.metadata.source || "Unknown";
+                const url = chunk.metadata.url;
+                // If it's a web result, show URL
+                const displaySource = url ? `${sourceName} (${url})` : sourceName;
+
+                answerText += `[${idx + 1}] ${displaySource}\n`;
+            });
         }
 
     } catch (error: any) {
@@ -664,7 +694,7 @@ Format your response in markdown.`;
 
     return {
         answer: answerText,
-        citations: citations
+        citations: [] // Citations are now included in the answer text
     };
 };
 
