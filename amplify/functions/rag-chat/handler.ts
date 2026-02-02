@@ -244,10 +244,17 @@ function keywordBasedSort(query: string, chunks: Chunk[]): Chunk[] {
 
         // 4. Doc Type Priority
         const docType = chunk.metadata.doc_type || '';
-        const priorityIndex = PRIORITY_ORDER.indexOf(docType);
-        if (priorityIndex !== -1) {
-            // Priority 0 (highest) gets largest boost
-            score += (PRIORITY_ORDER.length - priorityIndex) * 2;
+
+        if (docType === "web_search") {
+            // Critical: Web search results must survive the initial cut to be re-ranked by AI.
+            // Give them a score equivalent to the highest priority internal doc + bonus
+            score += 10.0;
+        } else {
+            const priorityIndex = PRIORITY_ORDER.indexOf(docType);
+            if (priorityIndex !== -1) {
+                // Priority 0 (highest) gets largest boost
+                score += (PRIORITY_ORDER.length - priorityIndex) * 2;
+            }
         }
 
         // 5. Recency Bonus
