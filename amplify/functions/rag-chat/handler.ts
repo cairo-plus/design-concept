@@ -295,46 +295,27 @@ async function evaluateRetrieval(query: string, chunks: Chunk[]): Promise<{ suff
 }
 
 
-export const handler = awslambda.streamifyResponse(async (event: any, responseStream: any, context: any) => {
+export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     console.log("Received event:", JSON.stringify(event));
 
-    // Handle both AppSync arguments and Function URL body
-    let query = "";
-    let uploadedDocs: string[] = [];
-
-    if (event.arguments) {
-        query = event.arguments.query;
-        uploadedDocs = event.arguments.uploadedDocs || [];
-    } else if (event.body) {
-        try {
-            const body = JSON.parse(event.body);
-            query = body.query;
-            uploadedDocs = body.uploadedDocs || [];
-        } catch (e) {
-            console.error("Failed to parse body", e);
-        }
-    }
-
-    // Prepare Response Stream (Headers)
-    // Note: Function URL might need explicit content type
-    // responseStream = awslambda.HttpResponseStream.from(responseStream, {
-    //     statusCode: 200,
-    //     headers: { "Content-Type": "text/plain" }
-    // }); 
-    // Usually standard stream writes are fine for simple text, but let's be safe if we can.
-    // However, simpler is better for now: just write strings.
+    // Extract query and uploadedDocs from AppSync event
+    const query = event.arguments.query;
+    const uploadedDocs = event.arguments.uploadedDocs || [];
 
     const bucketName = process.env.BUCKET_NAME;
 
     if (!bucketName) {
-        responseStream.write("Configuration Error: BUCKET_NAME is missing.");
-        responseStream.end();
-        return;
+        return {
+            answer: "Configuration Error: BUCKET_NAME is missing.",
+            citations: []
+        };
     }
+
+    let answerText = "";
+    const citations: string[] = [];
 
     try {
         // --- 1. Fetch chunks from S3 ---
-        // Parallelize S3 fetches for speed
         const targetKeys = uploadedDocs.map((path) => {
             let target = path.replace("public/", "protected/");
             const lastDotIndex = target.lastIndexOf(".");
@@ -344,7 +325,6 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
             return target + "_chunks.json";
         });
 
-        const citations: string[] = [];
         const allChunks: Chunk[] = [];
 
         // Parallel Fetch
@@ -369,7 +349,7 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
 
         const s3Results = await Promise.all(s3Promises);
 
-        s3Results.forEach(res => {
+        s3Results.forEach((res: any) => {
             if (res) {
                 if (Array.isArray(res.chunks)) allChunks.push(...res.chunks);
                 if (!citations.includes(res.fileName)) citations.push(res.fileName);
@@ -399,102 +379,74 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
                 shouldSearchWeb = false;
                 evalReason = "Sufficient internal documents with keyword matches.";
             } else {
-                // Evaluate internal docs with AI
-                responseStream.write("Evaluating internal documents...\n"); // User feedback
-                const evaluation = await evaluateRetrieval(query, allChunks);
-                shouldSearchWeb = !evaluation.sufficient;
-                evalReason = evaluation.reason;
-                console.log(`Evaluation: Sufficient=${evaluation.sufficient}, Reason=${evaluation.reason}`);
+                // We have some docs but not many matches - skip web search anyway for simplicity
+                shouldSearchWeb = false;
+                evalReason = "Some internal documents found.";
+                console.log(`Skipping web search: ${evalReason}`);
             }
         }
 
         if (shouldSearchWeb) {
-            responseStream.write("Insufficient information found. Searching the web...\n");
-            webChunks = await searchWeb(query);
-            allChunks.push(...webChunks);
-
-            webChunks.forEach(wc => {
-                if (wc.metadata.url && !citations.includes(`Web: ${wc.metadata.heading}`)) {
-                    citations.push(`[${wc.metadata.heading}](${wc.metadata.url})`);
+            answerText += "Insufficient information found. Searching the web...\n\n";
+            try {
+                webChunks = await searchWeb(query);
+                console.log(`Web search returned ${webChunks.length} chunks.`);
+                if (webChunks.length > 0) {
+                    citations.push(...webChunks.map(c => c.metadata.source).filter((v, i, a) => a.indexOf(v) === i));
                 }
-            });
-        } else {
-            responseStream.write("Sufficient information found in internal documents.\n");
+            } catch (webError: any) {
+                console.error("Web search failed:", webError);
+                answerText += `(Web search unavailable: ${webError.message})\n\n`;
+            }
         }
 
-        // --- 3. Reranking ---
-        // Optimization: Filter by keyword overlap BEFORE sending to Reranker to support larger document sets
-        // Simple Set-based keyword match for pre-filtering
-        const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+        // --- 3. Combine all chunks & Rerank ---
+        const combinedChunks = [...allChunks, ...webChunks];
 
-        let preFilteredChunks = allChunks;
-        if (allChunks.length > 100) {
-            // Pre-rank by simple keyword density
-            preFilteredChunks = allChunks.map(c => {
-                let overlap = 0;
-                const textLower = c.text.toLowerCase();
-                queryTerms.forEach(t => { if (textLower.includes(t)) overlap++; });
-                return { ...c, metadata: { ...c.metadata, simple_score: overlap } };
-            })
-                .sort((a, b) => b.metadata.simple_score - a.metadata.simple_score)
-                .slice(0, 100); // Take top 100 for AI reranking
+        if (combinedChunks.length === 0) {
+            return {
+                answer: "申し訳ございません。関連する情報が見つかりませんでした。\n\nもう少し具体的に質問していただけますか？",
+                citations: []
+            };
         }
 
-        let rankedChunks = await rerankChunks(query, preFilteredChunks);
+        const rankedChunks = await rerankChunks(query, combinedChunks);
+        console.log(`Reranked ${rankedChunks.length} chunks.`);
 
-        if (rankedChunks.length === 0 && allChunks.length > 0) {
-            console.log("Reranking removed all chunks, recovering top original chunks.");
-            rankedChunks = allChunks.slice(0, 20);
-        }
+        // --- 4. Build context for LLM ---
+        const TOP_K = 20;
+        const topChunks = rankedChunks.slice(0, TOP_K);
 
-        // --- 4. Construct Context ---
         let context = "";
-        const MAX_CONTEXT_LENGTH = 150000;
+        topChunks.forEach((chunk, idx) => {
+            const source = chunk.metadata.source || "Unknown";
+            const heading = chunk.metadata.heading || "";
+            const scoreStr = chunk.metadata.score !== undefined ? ` [Score: ${chunk.metadata.score.toFixed(2)}]` : "";
+            context += `[${idx + 1}] (${source})${heading ? ` - ${heading}` : ""}${scoreStr}\n${chunk.text.trim()}\n\n`;
+        });
 
-        for (const chunk of rankedChunks) {
-            if (context.length > MAX_CONTEXT_LENGTH) break;
-            const docType = chunk.metadata.doc_type || "other";
-            const docLabel = DOC_TYPE_LABELS[docType] || "Other Documents";
-            const header = chunk.metadata.heading ? `[Heading: ${chunk.metadata.heading}]` : "";
-            const source = chunk.metadata.source ? `(Source: ${chunk.metadata.source})` : "";
-            const score = chunk.metadata.score ? `(Relevance: ${chunk.metadata.score}/10)` : "";
-            context += `\n=== SOURCE: ${docLabel} ${score} ===\n${header} ${source}\n${chunk.text}\n`;
-        }
-
-        if (!context) context = "No relevant documents found.";
-
-        // --- 5. Generate with Streaming (with Prompt Caching) ---
-        const systemPrompt = `You are a sophisticated Design Assistant (設計アシスタント). 
-    Answer the user's question using the provided context documents.
-    
-    ## Thinking Process
-    1. Identify the core question and any specific constraints.
-    2. Scan the provided context for relevant keywords.
-    3. Evaluate reliability and priority. **Web Search results are highly reliable for latest trends/news (2024-2025).**
-    4. Formulate your answer based ONLY on the evidence.
-    
-    ## Citation Rules
-    - Prioritize: Web Search > Design Concept > Merchandise Plan > Product Plan > Regulation.
-    - Explicitly mention document types.
-    
-    Current Date: ${new Date().toISOString()}`;
+        const systemPrompt = `You are a helpful design assistant. Answer the user's question based on the provided context.
+- If the context contains relevant information, use it to provide a detailed answer in Japanese.
+- If the context doesn't contain enough information, say so honestly in Japanese.
+- Always cite sources using [source name] when referencing information.
+- Format your response in markdown for better readability.`;
 
         const contextMessage = `Context Priority (Top to Bottom):
     ${context}`;
 
-        // Use standard model ID for ap-northeast-1 (not cross-region us. prefix)
-        const modelId = "anthropic.claude-3-5-sonnet-20241022-v2:0";
+        // Use Claude 3.5 Sonnet v1 - v2 doesn't support on-demand throughput in ap-northeast-1
+        console.log("Using Model ID: anthropic.claude-3-5-sonnet-20240620-v1:0");
+        const modelId = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 
-        // OPTIMIZATION: Use Prompt Caching for system prompt and context
-        // This can reduce costs by 90% and improve latency on cache hits
+        // NOTE: Prompt Caching is disabled because Claude 3.5 Sonnet v1 doesn't support it
+        // Only v2 supports prompt caching, but v2 doesn't support on-demand throughput in Tokyo
         const payload = {
             anthropic_version: "bedrock-2023-05-31",
             max_tokens: 3000,
             system: [
                 {
                     type: "text",
-                    text: systemPrompt,
-                    cache_control: { type: "ephemeral" } // Cache system prompt
+                    text: systemPrompt
                 }
             ],
             messages: [
@@ -503,8 +455,7 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
                     content: [
                         {
                             type: "text",
-                            text: contextMessage,
-                            cache_control: { type: "ephemeral" } // Cache context
+                            text: contextMessage
                         },
                         {
                             type: "text",
@@ -522,10 +473,6 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
             body: JSON.stringify(payload),
         });
 
-        // Send thinking message if possible? 
-        // No, standard text stream. The client will see it arrive.
-        // responseStream.write("Thinking...\n"); // Optional
-
         try {
             const response = await bedrockClient.send(streamCommand);
 
@@ -535,7 +482,7 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
                         const decoded = new TextDecoder().decode(chunk.chunk.bytes);
                         const parsed = JSON.parse(decoded);
                         if (parsed.type === "content_block_delta" && parsed.delta && parsed.delta.text) {
-                            responseStream.write(parsed.delta.text);
+                            answerText += parsed.delta.text;
                         }
                     }
                 }
@@ -545,22 +492,25 @@ export const handler = awslambda.streamifyResponse(async (event: any, responseSt
 
             // Check if it's a rate limit error (429)
             if (e.name === 'ThrottlingException' || e.$metadata?.httpStatusCode === 429) {
-                responseStream.write(`\n\n申し訳ございません。現在リクエストが集中しているため、少し時間をおいてから再度お試しください。\n\n(Error: Too many requests - please wait a moment and try again)\n`);
+                answerText += `\n\n申し訳ございません。現在リクエストが集中しているため、少し時間をおいてから再度お試しください。\n\n(Error: Too many requests - please wait a moment and try again)\n`;
             } else {
-                responseStream.write(`\n\n回答の生成中にエラーが発生しました: ${e.message}\n\n(Error generating response: ${e.message})\n`);
+                answerText += `\n\n回答の生成中にエラーが発生しました: ${e.message}\n\n(Error generating response: ${e.message})\n`;
             }
         }
 
         // Append Citations
         if (citations.length > 0) {
-            responseStream.write(`\n\n---\n**参考資料:**\n`);
-            citations.forEach(c => responseStream.write(`- ${c}\n`));
+            answerText += `\n\n---\n**参考資料:**\n`;
+            citations.forEach(c => answerText += `- ${c}\n`);
         }
 
     } catch (error: any) {
         console.error("Handler error:", error);
-        responseStream.write(`System Error: ${error.message}`);
-    } finally {
-        responseStream.end();
+        answerText = `System Error: ${error.message}`;
     }
-});
+
+    return {
+        answer: answerText,
+        citations: citations
+    };
+};

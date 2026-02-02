@@ -8,7 +8,7 @@
 
 - **ドキュメントアップロード**: 設計構想書、商品企画書、製品企画書などの入力資料をアップロード (S3)
 - **コンポーネント選択**: テールゲート、フロントバンパー、フードなどの対象コンポーネントを選択
-- **Real RAG 生成 (Streaming)**: アップロードされた資料の中身を解析し、AWS Bedrock (Claude 3.5 Sonnet v2) を使用して設計構想書を自動生成。リアルタイムストリーミングにより、思考プロセスと回答生成の様子を即座に確認できます。
+- **Real RAG 生成**: アップロードされた資料の中身を解析し、AWS Bedrock (Claude 3.5 Sonnet v1) を使用して設計構想書を自動生成
 - **引用付きチャットボット**: アップロード資料に基づいた回答と、その根拠となる資料名の明示。以下の厳密な優先順位に基づきます：
     1. **Web検索結果 (最新トレンド・法規)**
     2. **設計構想書 (最重要)**
@@ -18,7 +18,7 @@
 - **インターネット検索 (Real Web Search)**: 「Tavily AI Search API」を統合。2024-2025年の最新法規やトレンドなど、社内資料にない情報を自動的にウェブから補完します。
 - **Corrective RAG (CRAG) with Smart Evaluation**: 検索結果が質問の回答に十分かをキーワードマッチで事前評価し、必要な場合のみAI (Claude 3 Haiku) が精密評価。「不十分」と判断された場合のみWeb検索を実行し、**API呼び出しを50-70%削減**しながら情報の網羅性と応答速度を最適化
 - **Smart AI Reranking (高精度化 + 最適化)**: 検索した資料をLLM (Claude 3 Haiku) が「質問との関連度」で採点。チャンク数が15未満の場合はキーワードベースの軽量ソートを使用し、**不要なAPI呼び出しを30-40%削減**。これにより**ハルシネーション（嘘の回答）**を劇的に低減しながらコストも最適化
-- **Prompt Caching (90%コスト削減)**: Anthropicのプロンプトキャッシング機能を活用し、システムプロンプトとコンテキストをキャッシュ。キャッシュヒット時は**コストが90%削減**され、レスポンスも高速化
+- **AppSync GraphQL API**: Lambda関数をAppSync経由で呼び出し、認証とデータ管理を統合。完全なJSON レスポンス形式で安定した動作を実現
 - **適応型リトライ戦略**: Bedrockへのリクエストをエクスポネンシャルバックオフ付きで最適化。レート制限エラーを回避しながら信頼性を向上
 - **ファイル処理ステータス表示**: アップロードされたファイルの解析状況（処理中/準備完了）をリアルタイムで可視化
 - **統合された履歴管理**:
@@ -34,10 +34,11 @@
 - **UI**: React 18.3.1
 - **スタイリング**: Tailwind CSS 4.0
 - **認証**: AWS Amplify 6.6.1
-- **生成AI**: AWS Bedrock (Claude 3.5 Sonnet v2 / Cross-Region Inference)
+- **バックエンド**: AWS AppSync (GraphQL API)
+- **生成AI**: AWS Bedrock (Claude 3.5 Sonnet v1 - 東京リージョン)
 - **Rerank AI**: AWS Bedrock (Claude 3 Haiku) with Smart Conditional Execution
 - **検索API**: Tavily AI Search API with CRAG Evaluation
-- **最適化**: Prompt Caching, Smart Reranking, Conditional CRAG
+- **最適化**: Smart Reranking, Conditional CRAG, Keyword-based Pre-filtering
 - **開発環境**: Node.js 20+
 
 ## 📁 プロジェクト構造

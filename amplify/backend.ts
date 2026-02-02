@@ -33,7 +33,7 @@ ragChatLambda.addEnvironment("BUCKET_NAME", bucket.bucketName);
 
 ragChatLambda.addToRolePolicy(new PolicyStatement({
     actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-    resources: ["*"]
+    resources: ["*"] // Force redeploy
 }));
 
 

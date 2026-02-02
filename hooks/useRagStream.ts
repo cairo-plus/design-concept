@@ -1,42 +1,49 @@
-import { RAG_CHAT_FUNCTION_URL } from '../rag-config';
+// Streaming RAG Chat via AppSync GraphQL
+// This calls the ragChat query which is connected to the Lambda function
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '@/amplify/data/resource';
+
+const client = generateClient<Schema>();
 
 export async function streamRagChat(
     query: string,
     uploadedDocs: string[],
     onChunk: (text: string) => void
 ): Promise<void> {
-    if (!RAG_CHAT_FUNCTION_URL) {
-        throw new Error("RAG Chat URL is not configured. Please check rag-config.ts");
-    }
-
-    const response = await fetch(RAG_CHAT_FUNCTION_URL, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ query, uploadedDocs })
-    });
-
-    if (!response.ok) {
-        throw new Error(`Server Error: ${response.statusText}`);
-    }
-
-    if (!response.body) return;
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
     try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            onChunk(text);
+        // Call the ragChat query via AppSync
+        console.log('Calling ragChat with:', { query, uploadedDocs });
+        const response = await client.queries.ragChat({
+            query: query,
+            uploadedDocs: uploadedDocs.length > 0 ? uploadedDocs : undefined
+        });
+
+        console.log('RagChat response:', response);
+        console.log('Response data:', response.data);
+        console.log('Response errors:', response.errors);
+        console.log('Response answer:', response.data?.answer);
+
+        // The response data contains the full answer
+        if (response.data?.answer) {
+            // Since AppSync doesn't support true streaming yet, we'll simulate
+            // by breaking the response into chunks for a better UX
+            const fullText = response.data.answer;
+            const chunkSize = 50; // Characters per chunk
+
+            for (let i = 0; i < fullText.length; i += chunkSize) {
+                const chunk = fullText.substring(i, Math.min(i + chunkSize, fullText.length));
+                onChunk(chunk);
+
+                // Small delay to simulate streaming
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+        } else {
+            console.warn('No answer in response:', response);
+            throw new Error('No answer received from server');
         }
-    } catch (e) {
-        console.error("Stream reading failed", e);
-        throw e;
-    } finally {
-        reader.releaseLock();
+    } catch (error: any) {
+        console.error('RagChat query failed:', error);
+        throw new Error(error.message || 'Failed to fetch chat response');
     }
 }
+

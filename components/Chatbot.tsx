@@ -157,8 +157,8 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
         setMessages((prev) => [...prev, { role: "bot", content: "" }]);
 
         try {
-            // Collect all uploaded file names to serve as context scope
-            const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.name);
+            // Collect all uploaded file paths to serve as context scope
+            const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.path);
 
             console.log("Starting Stream:", { query: userMessage });
 
