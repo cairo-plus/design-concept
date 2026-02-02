@@ -15,7 +15,7 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
     // Fixed window behavior
 
     const [messages, setMessages] = useState<{ role: "user" | "bot"; content: string; citations?: string[] }[]>([
-        { role: "bot", content: "こんにちは。設計構想書に関する質問があればどうぞ。\n\nアップロードされた資料や生成結果について質問できます。" },
+        { role: "bot", content: "こんにちは。設計構想書に関する質問があればどうぞ。\n\nアップロードされた資料や生成結果についてはもちろん、一般的な設計知識についても質問できます。" },
     ]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -139,7 +139,7 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
         if (uploadedCount > 0) {
             setMessages([{
                 role: "bot",
-                content: `こんにちは。${uploadedCount}件の資料がアップロードされています。\n\n設計構想書に関する質問があればどうぞ。`
+                content: `こんにちは。${uploadedCount}件の資料がアップロードされています。\n\nアップロードされた資料や生成結果についてはもちろん、一般的な設計知識についても質問できます。`
             }]);
         }
     }, [uploadedFiles]);

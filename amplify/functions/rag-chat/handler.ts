@@ -84,24 +84,61 @@ const DOC_TYPE_LABELS: Record<string, string> = {
  * Keyword-based Sorting (No API calls)
  * Fast alternative to AI reranking for small chunk sets
  */
+/**
+ * Keyword-based Sorting (Enhanced)
+ * Scored based on:
+ * 1. Term frequency in body
+ * 2. Term frequency in heading (High Boost)
+ * 3. Exact phrase matches
+ * 4. Document Type Priority
+ * 5. Recency (Dates)
+ */
 function keywordBasedSort(query: string, chunks: Chunk[]): Chunk[] {
     const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    const queryLower = query.toLowerCase();
+
+    // Heuristic for "latest" or "new"
+    const asksForLatest = queryLower.includes("latest") || queryLower.includes("最新") || queryLower.includes("直近");
 
     const scoredChunks = chunks.map(chunk => {
         const textLower = chunk.text.toLowerCase();
+        const headingLower = (chunk.metadata.heading || "").toLowerCase();
         let score = 0;
 
-        // Count keyword matches
+        // 1. Term Frequency in Body
         queryTerms.forEach(term => {
-            const matches = (textLower.match(new RegExp(term, 'g')) || []).length;
-            score += matches;
+            // Simple count (avoiding regex overhead for every term if possible, but regex is accurate)
+            const matches = textLower.split(term).length - 1;
+            score += matches * 1.0;
         });
 
-        // Boost score based on doc_type priority
+        // 2. Term Frequency in Heading (Boost)
+        queryTerms.forEach(term => {
+            if (headingLower.includes(term)) {
+                score += 5.0; // Heading match is highly relevant
+            }
+        });
+
+        // 3. Exact Phrase Match Bonus
+        if (textLower.includes(queryLower)) {
+            score += 3.0;
+        }
+
+        // 4. Doc Type Priority
         const docType = chunk.metadata.doc_type || '';
         const priorityIndex = PRIORITY_ORDER.indexOf(docType);
         if (priorityIndex !== -1) {
+            // Priority 0 (highest) gets largest boost
             score += (PRIORITY_ORDER.length - priorityIndex) * 2;
+        }
+
+        // 5. Recency Bonus
+        // If user asks for "latest", boost chunks having recent years
+        if (asksForLatest) {
+            const currentYear = new Date().getFullYear();
+            if (textLower.includes(String(currentYear)) || textLower.includes(String(currentYear + 1)) || textLower.includes("令和6年")) {
+                score += 5.0;
+            }
         }
 
         return { ...chunk, metadata: { ...chunk.metadata, score } };
@@ -184,8 +221,12 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
         return keywordBasedSort(query, chunks);
     }
 
-    // Limited Reranking to save cost/latency: Top 50 chunks max
-    const candidates = chunks.slice(0, 50);
+    // CRITICAL FIX: Sort ALL chunks by keyword relevance FIRST, then slice top 50 for AI reranking.
+    // Previously: candidate = chunks.slice(0, 50) -> this arbitrarily dropped relevant docs if they were loaded later.
+    const sortedCandidates = keywordBasedSort(query, chunks);
+
+    // Limited Reranking to save cost/latency: Top 50 of the BEST keyword matches
+    const candidates = sortedCandidates.slice(0, 50);
 
     console.log(`Large chunk set. AI reranking ${candidates.length} chunks...`);
 
@@ -197,7 +238,14 @@ async function rerankChunks(query: string, chunks: Chunk[]): Promise<Chunk[]> {
     0 = Completely irrelevant
     
     Output ONLY valid JSON in this format:
-    {"scores": [{"id": "chunk_id", "score": 9}, ...]}
+    Output ONLY valid JSON in this format:
+    {"scores": [{"id": "chunk_id", "score": 9, "reason": "brief reason"}, ...]}
+    
+    Scoring Criteria:
+    - 9-10: Exact answer or highly specific detail directly addressing the query.
+    - 7-8: Strongly relevant context or related facts.
+    - 4-6: General topic relevance but lacks specifics.
+    - 0-3: Irrelevant or completely different topic.
     
     Chunks to evaluate:
     ${JSON.stringify(candidates.map(c => ({ id: c.id, text: c.text.substring(0, 500) })))}
@@ -430,11 +478,16 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
             context += `[${idx + 1}] (${source})${heading ? ` - ${heading}` : ""}${scoreStr}\n${chunk.text.trim()}\n\n`;
         });
 
-        const systemPrompt = `You are a helpful design assistant. Answer the user's question based on the provided context.
-- If the context contains relevant information, use it to provide a detailed answer in Japanese.
-- If the context doesn't contain enough information, say so honestly in Japanese.
-- Always cite sources using [source name] when referencing information.
-- Format your response in markdown for better readability.`;
+        const systemPrompt = `You are a helpful design assistant for the Configurator Project.
+Answer the user's question based ONLY on the provided context.
+
+Rules:
+1. **Prioritize Official Documents**: Trust "Regulation", "Merchandise Plan", and "Design Intent" documents over others.
+2. **Admit Ignorance**: If the provided context does NOT contain the answer, say "Provided documents do not contain this information" (or Japanese equivalent). Do NOT guess or hallucinate.
+3. **Citations**: Always cite sources using [source name] when referencing information.
+4. **Language**: Answer in Japanese efficiently and politely.
+
+Format your response in markdown.`;
 
         const contextMessage = `Context Priority (Top to Bottom):
     ${context}`;
