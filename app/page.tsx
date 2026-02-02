@@ -321,6 +321,8 @@ export default function Dashboard() {
 
       const prompt = `
 Generate a design concept data for component "${selectedComponent}" based on the provided documents.
+If the provided documents are insufficient, you may search the internet for the latest regulations or trends.
+
 Strictly return valid JSON only. No strings before or after the JSON.
 The JSON must match this structure:
 {
@@ -328,13 +330,14 @@ The JSON must match this structure:
   "generatedAt": "${new Date().toLocaleDateString("ja-JP")}",
   "uploadedDocuments": [${allUploadedDocs.map(d => `"${d}"`).join(',')}],
   "sections": {
-    "overview": "Summary text...",
+    "overview": "Summary text...[1]",
     "requirements": [ { "id": "REQ-001", "description": "...", "priority": "High", "source": "Source Name" } ],
     "regulations": [ { "code": "Reg Code", "description": "...", "status": "Compliant", "source": "Source Name" } ],
     "references": [ { "name": "Ref Name", "type": "File" } ]
   }
 }
 If specific data is not found, infer reasonable engineering defaults or state "Not specified" but maintain the JSON structure.
+IMPORTANT: Use [x] citations in the text fields (overview, description) to indicate the source.
       `;
 
       let response;
@@ -373,25 +376,63 @@ If specific data is not found, infer reasonable engineering defaults or state "N
 
       if (!success) throw lastError || new Error("Failed after retries");
 
-      const jsonString = response?.data?.answer || "{}";
-      console.log("Raw Bedrock response:", jsonString.substring(0, 500)); // Log first 500 chars
+      const rawResponse = response?.data?.answer || "{}";
+      console.log("Raw Bedrock response:", rawResponse.substring(0, 500)); // Log first 500 chars
 
       // Sanitize string if LLM adds markdown blocks or extra text
-      let cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+      // We need to keep the part AFTER the JSON for citations
+      let jsonPart = rawResponse;
+      let citationPart = "";
 
-      // Try to extract JSON if there's extra text
-      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+      // Try to extract JSON
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        cleanJson = jsonMatch[0];
+        jsonPart = jsonMatch[0];
+        // Everything after the last '}' is potentially citation info
+        const lastBraceIndex = rawResponse.lastIndexOf("}");
+        if (lastBraceIndex !== -1) {
+          citationPart = rawResponse.substring(lastBraceIndex + 1);
+        }
+      } else {
+        // Fallback cleanup
+        jsonPart = rawResponse.replace(/```json/g, "").replace(/```/g, "").trim();
       }
 
       let data: DesignConceptData;
       try {
-        data = JSON.parse(cleanJson);
+        data = JSON.parse(jsonPart);
       } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
-        console.error("Attempted to parse:", cleanJson.substring(0, 1000));
+        console.error("Attempted to parse:", jsonPart.substring(0, 1000));
         throw new Error(`Invalid JSON structure: ${(parseError as Error).message}. Response may not be properly formatted.`);
+      }
+
+      // Merge backend-generated citations into the JSON 'references' section
+      if (citationPart) {
+        const lines = citationPart.split('\n');
+        const extractedRefs: { name: string, type: string }[] = [];
+
+        lines.forEach(line => {
+          // Match "[1] SourceName (URL)" or "[1] FileName"
+          const match = line.match(/^\[(\d+)\]\s+(.+)$/);
+          if (match) {
+            const content = match[2].trim();
+            // Check if it looks like a URL
+            const isWeb = content.includes("http") || content.includes("(");
+            extractedRefs.push({
+              name: `[${match[1]}] ${content}`,
+              type: isWeb ? "Web" : "Document"
+            });
+          }
+        });
+
+        if (extractedRefs.length > 0) {
+          // Append to existing references if any
+          data.sections.references = [
+            ...(data.sections.references || []),
+            ...extractedRefs
+          ];
+        }
       }
 
       // Validate required structure
