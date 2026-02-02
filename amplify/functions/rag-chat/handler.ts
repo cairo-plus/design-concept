@@ -162,8 +162,11 @@ async function shouldTriggerWebSearch(query: string): Promise<boolean> {
     const prompt = `You are a Router.
     Query: "${query}"
 
-    Does this query strictly require REAL-TIME external information (e.g., current stock prices, breaking news, 2025/2026 future trends not in static docs)?
-    Answer TRUE only if internal static documents (design specs, older regulations) are definitely insufficient.
+    Determine if this query should check external web sources.
+    Answer TRUE if:
+    1. The query asks for real-time information (news, stock prices, future trends).
+    2. The query asks for general knowledge likely not in internal technical docs (e.g., "CEO of X", "Capital of Y").
+    3. The internal static documents (design specs, regulations) are likely insufficient.
     
     Output JSON ONLY: {"search": true/false}`;
 
@@ -274,7 +277,7 @@ async function searchWeb(query: string): Promise<Chunk[]> {
 
     // Simple heuristic: Only search if query implies outside knowledge or explicitly asks for it
     // But for now, let's search if the query is reasonably long or contains "latest"/"2025" etc.
-    const needsSearch = query.length > 5; // Search for almost everything to be safe, or refine heuristic
+    const needsSearch = query.length > 2; // Reduced from 5 to allow shorter queries
     if (!needsSearch) return [];
 
     console.log(`Executing Web Search for: ${query}`);
@@ -527,8 +530,36 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
         // Pass the ENRICHED query (synonyms) to the reranker for better keyword matching
         // The AI inside rerank might see the synonyms, which is helpful context
-        const rankedChunks = await rerankChunks(enrichedQuery, combinedChunks);
+        let rankedChunks = await rerankChunks(enrichedQuery, combinedChunks);
         console.log(`Reranked ${rankedChunks.length} chunks.`);
+
+        // --- Fallback Mechanism: Score Check ---
+        const topScore = rankedChunks.length > 0 ? (rankedChunks[0].metadata.score || 0) : 0;
+        // Threshold: 5.0 (AI "Context" is 6-8, "Term Match" is 3-5. Local sort: Heading is 5.0)
+        // If the best match is weak, try Web Search if we haven't already
+        const isRelevanceLow = topScore < 5.0;
+
+        if (!performWebSearch && isRelevanceLow) {
+            console.log(`Low relevance (Top Score: ${topScore}). Triggering Fallback Web Search.`);
+            answerText += "Internal documents may not be sufficient. Checking the web...\n\n";
+
+            try {
+                // Use the original query for web search often works better than enriched for general topics
+                const fallbackChunks = await searchWeb(query);
+                if (fallbackChunks.length > 0) {
+                    // Update citations
+                    citations.push(...fallbackChunks.map(c => c.metadata.source).filter((v, i, a) => a.indexOf(v) === i));
+
+                    // Combine and Re-rank again with the new chunks
+                    const newCombined = [...combinedChunks, ...fallbackChunks];
+                    rankedChunks = await rerankChunks(enrichedQuery, newCombined);
+                    console.log(`Fallback Reranked ${rankedChunks.length} chunks.`);
+                }
+            } catch (webError: any) {
+                console.warn("Fallback web search failed:", webError);
+                answerText += `(Fallback search unavailable: ${webError.message})\n\n`;
+            }
+        }
 
         // --- 4. Build context for LLM ---
         const queryComplexity = query.split(/\s+/).filter(t => t.length > 0).length;
