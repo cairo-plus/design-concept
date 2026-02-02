@@ -168,7 +168,13 @@ export default function HistoryPage() {
                                             <div className="bg-white p-4 rounded-lg border border-slate-200 text-slate-800 shadow-sm whitespace-pre-wrap text-sm leading-relaxed">
                                                 {selectedItem.type === "DESIGN_DRAFT" ? (
                                                     <pre className="font-mono text-xs overflow-x-auto bg-slate-900 text-slate-50 p-3 rounded">
-                                                        {JSON.stringify(JSON.parse(selectedItem.response), null, 2)}
+                                                        {(() => {
+                                                            try {
+                                                                return JSON.stringify(JSON.parse(selectedItem.response), null, 2);
+                                                            } catch (e) {
+                                                                return selectedItem.response;
+                                                            }
+                                                        })()}
                                                     </pre>
                                                 ) : (
                                                     selectedItem.response

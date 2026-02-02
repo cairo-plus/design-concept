@@ -448,7 +448,7 @@ IMPORTANT: Use [x] citations in the text fields (overview, description) to indic
         await client.models.InteractionHistory.create({
           type: "DESIGN_DRAFT",
           query: `Design Concept Generation for ${selectedComponent}`,
-          response: jsonString,
+          response: JSON.stringify(data),
           usedSources: allUploadedDocs,
           createdAt: new Date().toISOString()
         });
