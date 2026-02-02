@@ -240,13 +240,12 @@ graph TD
 
 | Resource Type | Resource Name / ID |
 | :--- | :--- |
-| **App ID** | `d36x7v8ch44hay` |
 | **Region** | `ap-northeast-1` |
-| **S3 Bucket** | `amplify-d36x7v8ch44hay-ma-designconceptfilesbucket-bsc5b7uvescf` |
-| **User Pool ID** | `ap-northeast-1_6hAFP3QRB` |
-| **User Pool Client ID** | `5rmelidmev9jpmbq4f9sh0mkce` |
-| **Identity Pool ID** | `ap-northeast-1:0e8b395b-accc-43fc-ae66-9e1b6329e958` |
-| **GraphQL API Endpoint** | `https://doefvmocm5a2vplpaytoybboqa.appsync-api.ap-northeast-1.amazonaws.com/graphql` |
+| **S3 Bucket** | `amplify-designconcept-ume-designconceptfilesbucket-6vtibnbl9kmo` |
+| **User Pool ID** | `ap-northeast-1_BK9NjYES2` |
+| **User Pool Client ID** | `7d7vv9dkvr37bbqltgtob2594u` |
+| **Identity Pool ID** | `ap-northeast-1:fc5279d0-8c9b-4abe-887d-94a2f5e2f9af` |
+| **GraphQL API Endpoint** | `https://2qrslgkyxve5xd36qzythkc7qe.appsync-api.ap-northeast-1.amazonaws.com/graphql` |
 
 ## 📄 ライセンス
 

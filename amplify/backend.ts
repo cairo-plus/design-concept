@@ -32,7 +32,7 @@ bucket.grantRead(ragChatLambda);
 ragChatLambda.addEnvironment("BUCKET_NAME", bucket.bucketName);
 
 ragChatLambda.addToRolePolicy(new PolicyStatement({
-    actions: ["bedrock:InvokeModel"],
+    actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
     resources: ["*"]
 }));
 
