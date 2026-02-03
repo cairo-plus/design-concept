@@ -4,7 +4,7 @@ backend:
     build:
       commands:
         - npm ci --cache .npm --prefer-offline
-        - docker run --privileged --rm tonistiigi/binfmt --install all
+
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
