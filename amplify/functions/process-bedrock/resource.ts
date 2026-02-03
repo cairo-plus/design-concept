@@ -1,6 +1,6 @@
 import { defineFunction } from "@aws-amplify/backend";
 
-import { DockerImageFunction, DockerImageCode } from "aws-cdk-lib/aws-lambda";
+import { DockerImageFunction, DockerImageCode, Architecture } from "aws-cdk-lib/aws-lambda";
 import { Platform } from "aws-cdk-lib/aws-ecr-assets";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as cdk from "aws-cdk-lib";
@@ -14,8 +14,9 @@ const __dirname = path.dirname(__filename);
 export const processBedrock = defineFunction((scope) => {
     return new DockerImageFunction(scope, "ProcessBedrockFunction", {
         code: DockerImageCode.fromImageAsset(path.join(__dirname, "."), {
-            platform: Platform.LINUX_AMD64,
+            platform: Platform.LINUX_ARM64,
         }),
+        architecture: Architecture.ARM_64,
         timeout: Duration.minutes(15),
         memorySize: 1024,
         logGroup: new logs.LogGroup(scope, "ProcessBedrockLogGroup", {
