@@ -82,14 +82,41 @@ export default function Dashboard() {
 
   const loadHistoryItem = (item: any) => {
     try {
-      if (typeof item.response === 'string') {
-        const data = JSON.parse(item.response);
-        setGeneratedData(data);
+      let responseData = item.response;
+
+      // If response is already an object, use it directly
+      if (typeof responseData === 'object') {
+        setGeneratedData(responseData);
         setViewMode("generated");
+        return;
       }
+
+      // If it's a string, try to parse it
+      if (typeof responseData === 'string') {
+        try {
+          // First, try parsing as-is
+          const data = JSON.parse(responseData);
+          setGeneratedData(data);
+          setViewMode("generated");
+          return;
+        } catch (initialError) {
+          // If that fails, try to extract just the JSON portion
+          const jsonMatch = responseData.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const data = JSON.parse(jsonMatch[0]);
+            setGeneratedData(data);
+            setViewMode("generated");
+            console.warn("Loaded history item with cleaned JSON (removed trailing text)");
+            return;
+          }
+          throw initialError;
+        }
+      }
+
+      throw new Error("Invalid response format");
     } catch (e) {
       console.error("Failed to parse history item", e);
-      alert("データの読み込みに失敗しました");
+      alert("データの読み込みに失敗しました。このデータは破損している可能性があります。\n\nエラー: " + (e as Error).message);
     }
   };
 
@@ -735,7 +762,13 @@ IMPORTANT: Use [x] citations in the text fields (overview, description) to indic
                           <div className="flex justify-between items-start mb-2">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded">
-                                {JSON.parse(item.response)?.componentName || "不明なコンポーネント"}
+                                {(() => {
+                                  try {
+                                    return JSON.parse(item.response)?.componentName || "不明なコンポーネント";
+                                  } catch (e) {
+                                    return "データエラー";
+                                  }
+                                })()}
                               </span>
                               <span className="text-xs text-slate-400">
                                 {new Date(item.createdAt).toLocaleDateString("ja-JP")} {new Date(item.createdAt).toLocaleTimeString("ja-JP", { hour: '2-digit', minute: '2-digit' })}
