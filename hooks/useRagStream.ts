@@ -8,14 +8,16 @@ const client = generateClient<Schema>();
 export async function streamRagChat(
     query: string,
     uploadedDocs: string[],
+    history: { role: string; content: string }[],
     onChunk: (text: string) => void
 ): Promise<void> {
     try {
         // Call the ragChat query via AppSync
-        console.log('Calling ragChat with:', { query, uploadedDocs });
+        console.log('Calling ragChat with:', { query, uploadedDocs, historyLength: history.length });
         const response = await client.queries.ragChat({
             query: query,
-            uploadedDocs: uploadedDocs.length > 0 ? uploadedDocs : undefined
+            uploadedDocs: uploadedDocs.length > 0 ? uploadedDocs : undefined,
+            history: history.map(msg => JSON.stringify(msg))
         });
 
         console.log('RagChat response:', response);

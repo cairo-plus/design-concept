@@ -31,6 +31,7 @@ const schema = a.schema({
         .arguments({
             query: a.string().required(),
             uploadedDocs: a.string().array(),
+            history: a.string().array(),
         })
         .returns(a.ref('ChatResponse'))
         .authorization(allow => [allow.authenticated()])

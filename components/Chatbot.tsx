@@ -162,9 +162,15 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
 
             console.log("Starting Stream:", { query: userMessage });
 
+            // Prepare history (remove citations for cleaner payload, ensure strict {role, content})
+            const chatHistory = messages.map(m => ({
+                role: m.role,
+                content: m.content
+            }));
+
             let fullText = "";
 
-            await streamRagChat(userMessage, allUploadedDocs, (chunk: string) => {
+            await streamRagChat(userMessage, allUploadedDocs, chatHistory, (chunk: string) => {
                 fullText += chunk;
                 setMessages((prev) => {
                     const newArr = [...prev];

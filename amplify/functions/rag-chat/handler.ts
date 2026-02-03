@@ -30,6 +30,7 @@ interface ChatEvent {
     arguments: {
         query: string;
         uploadedDocs?: string[]; // Optional list of doc names to prioritize
+        history?: string[]; // Optional list of previous messages (JSON strings)
     };
 }
 
@@ -93,6 +94,63 @@ const DOC_TYPE_LABELS: Record<string, string> = {
  * 4. Document Type Priority
  * 5. Recency (Dates)
  */
+/**
+ * Query Expansion
+ * Uses Claude 3 Haiku to generate synonyms and related terms.
+ */
+/**
+ * Contextualize Query
+ * Rewrites the user query based on conversation history.
+ */
+async function contextualizeQuery(query: string, history: Array<{ role: string, content: string }>): Promise<string> {
+    if (!history || history.length === 0) return query;
+
+    const recentHistory = history.slice(-6); // Last 3 turns
+
+    const historyText = recentHistory.map(h => `${h.role === 'bot' ? 'Assistant' : 'User'}: ${h.content}`).join("\n");
+
+    const prompt = `You are a Query Reformulator.
+
+    Conversation History:
+    ${historyText}
+
+    Current User Query: "${query}"
+
+    Task: Rewrite the Current User Query to be a standalone question that fully captures the context from the history.
+    - If the query implies a reference to a previous topic (e.g. "What about its price?"), replace pronouns with specific entities (e.g. "What about the price of the Eclipse Cross?").
+    - If the query is already standalone, return it exactly as is.
+    - Do NOT answer the question. Just rewrite it.
+
+    Output JSON ONLY: {"rewritten_query": "..."}`;
+
+    const payload = {
+        modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 200,
+            system: "You are a JSON-only API.",
+            messages: [{ role: "user", content: prompt }]
+        })
+    };
+
+    try {
+        const command = new InvokeModelCommand(payload);
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const jsonMatch = responseBody.content[0].text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const rewritten = JSON.parse(jsonMatch[0]).rewritten_query;
+            console.log(`Contextualized Query: "${query}" -> "${rewritten}"`);
+            return rewritten;
+        }
+    } catch (e) {
+        console.warn("Contextualization failed:", e);
+    }
+    return query;
+}
+
 /**
  * Query Expansion
  * Uses Claude 3 Haiku to generate synonyms and related terms.
@@ -440,6 +498,15 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     // Extract query and uploadedDocs from AppSync event
     const query = event.arguments.query;
     const uploadedDocs = event.arguments.uploadedDocs || [];
+    const historyStrs = event.arguments.history || [];
+
+    // Parse history
+    let parsedHistory: Array<{ role: string, content: string }> = [];
+    try {
+        parsedHistory = historyStrs.map(h => JSON.parse(h));
+    } catch (e) {
+        console.warn("Failed to parse history", e);
+    }
 
     const bucketName = process.env.BUCKET_NAME;
 
@@ -454,11 +521,14 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
     const citations: string[] = [];
 
     try {
-        // --- 0. Query Expansion & Routing ---
+        // --- 0. Pre-processing: Contextualization ---
+        const searchTargetQuery = await contextualizeQuery(query, parsedHistory);
+
+        // --- 0.5. Query Expansion & Routing ---
         // Parallel execution for speed
         const [expandedQueries, shouldWeb] = await Promise.all([
-            generateSearchQueries(query),
-            shouldTriggerWebSearch(query)
+            generateSearchQueries(searchTargetQuery),
+            shouldTriggerWebSearch(searchTargetQuery)
         ]);
 
         // Use a combined query for keyword matching (to catch synonyms)
@@ -527,7 +597,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
             try {
                 // Use the most specific expanded query if available, or original
-                const searchQ = query;
+                const searchQ = searchTargetQuery;
                 webChunks = await searchWeb(searchQ);
                 console.log(`Web search returned ${webChunks.length} chunks.`);
                 if (webChunks.length > 0) {
@@ -566,7 +636,7 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
             try {
                 // Use the original query for web search often works better than enriched for general topics
-                const fallbackChunks = await searchWeb(query);
+                const fallbackChunks = await searchWeb(searchTargetQuery);
                 if (fallbackChunks.length > 0) {
                     // Update citations
                     citations.push(...fallbackChunks.map(c => c.metadata.source).filter((v, i, a) => a.indexOf(v) === i));
@@ -656,8 +726,56 @@ Format your response in markdown.`;
         const contextMessage = `Context Priority (Top to Bottom):
     ${context}`;
 
+        // Construct Messages with History
+        // Ensure strictly alternating User/Assistant roles and start with User
+        const bedrockMessages: any[] = [];
+
+        // Add History
+        if (parsedHistory.length > 0) {
+            let lastRole = "";
+            parsedHistory.forEach(msg => {
+                // Skip if first message is not user (e.g. Bot Greeting) and list is empty
+                if (bedrockMessages.length === 0 && msg.role !== 'user') return;
+
+                // Map role 'bot' -> 'assistant'
+                const role = msg.role === 'bot' ? 'assistant' : msg.role;
+
+                // Avoid duplicates if any (though UI should handle this)
+                if (role === lastRole) return;
+
+                bedrockMessages.push({
+                    role: role,
+                    content: [{ type: "text", text: msg.content }]
+                });
+                lastRole = role;
+            });
+        }
+
+        // Ensure we always have a user message at the end
+        // If the last message is from user, pop it so we can append the new context + query
+        if (bedrockMessages.length > 0 && bedrockMessages[bedrockMessages.length - 1].role === 'user') {
+            bedrockMessages.pop();
+        }
+
+        // Append Current Message (User) with Context
+        bedrockMessages.push({
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: contextMessage
+                },
+                {
+                    type: "text",
+                    text: `Question: ${query}` // Use original query here as context/search handled context
+                }
+            ]
+        });
+
         console.log("Using Model ID: anthropic.claude-3-5-sonnet-20240620-v1:0");
         const modelId = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+
+
 
         const payload = {
             anthropic_version: "bedrock-2023-05-31",
@@ -676,21 +794,7 @@ Your clear, helpful answer in Japanese here, with [x] citations included in the 
 `
                 }
             ],
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        {
-                            type: "text",
-                            text: contextMessage
-                        },
-                        {
-                            type: "text",
-                            text: `Question: ${query}`
-                        }
-                    ]
-                }
-            ],
+            messages: bedrockMessages,
         };
 
         const streamCommand = new InvokeModelWithResponseStreamCommand({
