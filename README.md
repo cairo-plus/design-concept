@@ -35,6 +35,8 @@
     - **エラーハンドリング強化**: 破損データがあってもページがクラッシュせず、適切なエラーメッセージを表示
 - **ユーザー情報表示**: ログイン中のユーザーID（メールアドレス）をヘッダーに表示
 - **認証機能**: AWS Amplify による安全なユーザー認証
+- **エラーログ強化 (2026/02)**: Tavily API エラーの詳細ログ記録により、Web検索トラブルシューティングが迅速化
+- **UX改善 (2026/02)**: LLM内部の`<thinking>`タグを除去し、クリーンな応答表示を実現
 
 ## 🚀 技術スタック
 
@@ -256,8 +258,78 @@ graph TD
 | フォールバック閾値 | 5.0 | **6.0** | より積極的なWeb検索発動 |
 | 参考資料表示 | フルパス+拡張子 | **ファイル名のみ** | 読みやすさの向上 |
 
+---
 
+## 🔧 トラブルシューティング
 
+### Web検索が実行されない場合
+
+#### 症状
+- 「Retrieving latest information from the web...」と表示されるが、検索結果が返ってこない
+- LLMが「インターネット検索機能がありません」と応答する
+
+#### 確認事項
+
+**1. Tavily API Quota の確認**
+```bash
+# Lambda関数のログを確認
+aws logs filter-log-events \
+  --log-group-name "/aws/lambda/amplify-d36x7v8ch44hay-main--ragchatlambdaFF53FEA8-iww4pIgmMLvS" \
+  --region ap-northeast-1 \
+  --filter-pattern "Tavily" \
+  --max-items 10
+```
+
+エラーログに `quota exceeded` や `rate limit` が含まれている場合：
+- [Tavily Dashboard](https://tavily.com/dashboard) でクォータを確認
+- プランのアップグレードまたはクォータリセットを待機
+
+**2. Bedrock Model Access の確認**
+```bash
+# Claude 3 Haiku モデルへのアクセス権限を確認
+aws bedrock get-foundation-model-availability \
+  --region ap-northeast-1 \
+  --model-id anthropic.claude-3-haiku-20240307-v1:0
+```
+
+`authorizationStatus` が `AUTHORIZED` でない場合：
+- [Bedrock Console](https://ap-northeast-1.console.aws.amazon.com/bedrock/home?region=ap-northeast-1#/modelaccess) でモデルアクセスを有効化
+- **Anthropic Claude 3 Haiku** にチェックを入れて「Request model access」
+
+**3. エラーログの詳細確認**
+
+最新ログの確認：
+```bash
+aws logs describe-log-streams \
+  --log-group-name "/aws/lambda/amplify-d36x7v8ch44hay-main--ragchatlambdaFF53FEA8-iww4pIgmMLvS" \
+  --order-by LastEventTime \
+  --descending \
+  --max-items 1 \
+  --region ap-northeast-1
+```
+
+### よくあるエラーと解決方法
+
+| エラーメッセージ | 原因 | 解決方法 |
+|------------------|------|----------|
+| `TAVILY_API_KEY is not set` | 環境変数未設定 | `npx ampx sandbox secret set TAVILY_API_KEY` で設定 |
+| `Tavily API error (402)` | クォータ超過 | Tavilyプランのアップグレード |
+| `AccessDeniedException` | Bedrockモデル未承認 | Model Accessを有効化 |
+| `ThrottlingException` | リクエスト過多 | 時間をおいて再試行 |
+
+### デバッグモード
+
+詳細なログを確認：
+```bash
+# 過去1時間のすべてのログを取得
+aws logs filter-log-events \
+  --log-group-name "/aws/lambda/amplify-d36x7v8ch44hay-main--ragchatlambdaFF53FEA8-iww4pIgmMLvS" \
+  --region ap-northeast-1 \
+  --start-time $(($(date +%s) - 3600))000 \
+  --max-items 100
+```
+
+---
 
 ## ☁️ AWS Resources (Deployed)
 
