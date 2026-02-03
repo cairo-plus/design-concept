@@ -348,6 +348,7 @@ export default function Dashboard() {
 
       const prompt = `
 Generate a design concept data for component "${selectedComponent}" based on the provided documents.
+The output must follow the structure of "Template_DesignConceptDocument251118" which consists of 8 specific sections.
 If the provided documents are insufficient, you may search the internet for the latest regulations or trends.
 
 Strictly return valid JSON only. No strings before or after the JSON.
@@ -357,14 +358,19 @@ The JSON must match this structure:
   "generatedAt": "${new Date().toLocaleDateString("ja-JP")}",
   "uploadedDocuments": [${allUploadedDocs.map(d => `"${d}"`).join(',')}],
   "sections": {
-    "overview": "Summary text...[1]",
-    "requirements": [ { "id": "REQ-001", "description": "...", "priority": "High", "source": "Source Name" } ],
-    "regulations": [ { "code": "Reg Code", "description": "...", "status": "Compliant", "source": "Source Name" } ],
+    "objectives": "1. 目的 (Objectives) ...",
+    "currentIssues": "2. 現状の課題 (Current Issues) ...",
+    "benchmark": "3. ベンチマーク (Benchmark) ...",
+    "designConcept": "4. 設計コンセプト (Design Concept) ...",
+    "mainSpecifications": [ { "item": "Specification Item", "spec": "Value/Description" } ],
+    "basicStructure": "6. 基本構造 (Basic Structure) ...",
+    "adoptedTechnologies": "7. 採用技術 (Adopted Technologies) ...",
+    "risksAndCountermeasures": [ { "risk": "Risk Description", "countermeasure": "Countermeasure" } ],
     "references": [ { "name": "Ref Name", "type": "File" } ]
   }
 }
 If specific data is not found, infer reasonable engineering defaults or state "Not specified" but maintain the JSON structure.
-IMPORTANT: Use [x] citations in the text fields (overview, description) to indicate the source.
+IMPORTANT: Use [x] citations in the text fields to indicate the source.
       `;
 
       let response;

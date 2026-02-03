@@ -7,9 +7,15 @@ export interface DesignConceptData {
     generatedAt: string;
     uploadedDocuments: string[];
     sections: {
-        overview: string;
-        requirements: { id: string; description: string; priority: string; source: string }[];
-        regulations: { code: string; description: string; status: string; source: string }[];
+        objectives: string; // 1.目的
+        currentIssues: string; // 2.現状の課題
+        benchmark: string; // 3.ベンチマーク
+        designConcept: string; // 4.設計コンセプト
+        mainSpecifications: { item: string; spec: string }[]; // 5.主要仕様
+        basicStructure: string; // 6.基本構造
+        adoptedTechnologies: string; // 7.採用技術
+        risksAndCountermeasures: { risk: string; countermeasure: string }[]; // 8.リスク及び対応策
+        // Legacy/Common fields
         references: { name: string; type: string }[];
     };
 }
@@ -31,36 +37,27 @@ export function generateMockData(
     componentName: string,
     uploadedDocs: string[]
 ): DesignConceptData {
-    // Create citation mapping based on uploaded docs
-    const getSource = (docType: string, page: number) => {
-        // Try to find a file that matches the docType
-        // Simple heuristic: check if doc name includes docType or vice versa
-        const matchedDoc = uploadedDocs.find(doc => doc.includes(docType) || docType.includes(doc));
-
-        if (matchedDoc) {
-            return `${matchedDoc} p.${page}`;
-        }
-        // Fallback
-        return uploadedDocs.length > 0 ? `${uploadedDocs[0]} p.${page}` : `${docType} p.${page}`;
-    };
-
     return {
         componentName,
         generatedAt: new Date().toLocaleDateString("ja-JP"),
         uploadedDocuments: uploadedDocs,
         sections: {
-            overview: `${componentName}の設計構想書\n\n本書は、${componentName}の設計要件、法規要件、参考資料をまとめたものです。\n\n【引用元資料】\n${uploadedDocs.map((doc, i) => `${i + 1}. ${doc}`).join('\n')}`,
-            requirements: [
-                { id: "REQ-001", description: "軽量化：現行比10%削減", priority: "高", source: getSource("商品計画書", 12) },
-                { id: "REQ-002", description: "コスト目標：現行同等以下", priority: "高", source: getSource("商品計画書", 15) },
-                { id: "REQ-003", description: "組立性向上：工数20%削減", priority: "中", source: getSource("製品企画書", 8) },
-                { id: "REQ-004", description: "デザイン自由度確保", priority: "中", source: getSource("製品企画書", 22) },
-                { id: "REQ-005", description: "耐久性：10年/20万km保証", priority: "高", source: getSource("設計構想書", 5) },
+            objectives: `【${componentName}の開発目的】\n・次世代モデルとしての競争力強化\n・環境規制への対応\n・ユーザー利便性の向上`,
+            currentIssues: "・重量増による燃費悪化\n・製造コストの高止まり\n・部品点数の多さ",
+            benchmark: "・競合A社：軽量素材の採用により-15%の軽量化達成\n・競合B社：モジュール化による組立工数削減",
+            designConcept: `「Eco & Smart ${componentName}」\n・軽量化と高剛性の両立\n・リサイクル素材の積極採用\n・スマート機能の統合`,
+            mainSpecifications: [
+                { item: "重量", spec: "15.5kg (目標値)" },
+                { item: "材質", spec: "アルミニウム合金 / CFRP" },
+                { item: "寸法", spec: "1200mm x 600mm x 300mm" },
+                { item: "表面処理", spec: "耐候性塗装 3コート" }
             ],
-            regulations: [
-                { code: "ECE R42", description: "前部及び後部の保護装置", status: "適合要", source: getSource("法規リスト", 3) },
-                { code: "FMVSS 581", description: "バンパー基準", status: "適合要", source: getSource("法規リスト", 7) },
-                { code: "ECE R26", description: "外部突起規制", status: "適合要", source: getSource("法規リスト", 12) },
+            basicStructure: "・インナーパネルとアウターパネルの2重構造\n・閉断面構造による剛性確保\n・ヒンジ部への補強材配置",
+            adoptedTechnologies: "・ホットスタンプ成形\n・レーザー溶接\n・構造用接着剤の併用",
+            risksAndCountermeasures: [
+                { risk: "新素材採用によるコスト増", countermeasure: "歩留まり向上改善と量産効果による相殺" },
+                { risk: "成形難易度の上昇", countermeasure: "CAE解析による事前検証の徹底" },
+                { risk: "異種材料接合部の腐食", countermeasure: "電食防止シールの適用" }
             ],
             references: uploadedDocs.map((doc) => ({
                 name: doc,
@@ -76,45 +73,64 @@ export function generateMockData(
 export function exportToExcel(data: DesignConceptData): void {
     const workbook = XLSX.utils.book_new();
 
-    // Sheet 1: Overview (概要)
-    const overviewData = [
+    // Sheet 1: Concept Document (全体)
+    // We will list all sections in order
+    const overviewData: any[][] = [
         ["設計構想書"],
         [""],
         ["対象コンポーネント", data.componentName],
         ["生成日", data.generatedAt],
         [""],
-        ["概要"],
-        [data.sections.overview],
+        // 1. 目的
+        ["1. 目的"],
+        [data.sections.objectives],
+        [""],
+        // 2. 現状の課題
+        ["2. 現状の課題"],
+        [data.sections.currentIssues],
+        [""],
+        // 3. ベンチマーク
+        ["3. ベンチマーク"],
+        [data.sections.benchmark],
+        [""],
+        // 4. 設計コンセプト
+        ["4. 設計コンセプト"],
+        [data.sections.designConcept],
+        [""],
+        // 5. 主要仕様
+        ["5. 主要仕様"],
+        ["項目", "仕様値"],
+        ...data.sections.mainSpecifications.map(s => [s.item, s.spec]),
+        [""],
+        // 6. 基本構造
+        ["6. 基本構造"],
+        [data.sections.basicStructure],
+        [""],
+        // 7. 採用技術
+        ["7. 採用技術"],
+        [data.sections.adoptedTechnologies],
+        [""],
+        // 8. リスク及び対応策
+        ["8. リスク及び対応策"],
+        ["リスク", "対応策"],
+        ...data.sections.risksAndCountermeasures.map(r => [r.risk, r.countermeasure]),
+        [""],
+        // References
+        ["参考資料"],
+        ["資料名", "種類"],
+        ...data.sections.references.map((r) => [r.name, r.type]),
         [""],
         ["引用元資料一覧"],
         ...data.uploadedDocuments.map((doc, i) => [`${i + 1}. ${doc}`]),
     ];
+
     const overviewSheet = XLSX.utils.aoa_to_sheet(overviewData);
-    overviewSheet["!cols"] = [{ wch: 25 }, { wch: 50 }];
-    XLSX.utils.book_append_sheet(workbook, overviewSheet, "概要");
-
-    // Sheet 2: Requirements with citations (要件一覧)
-    const reqHeader = ["要件ID", "説明", "優先度", "引用元"];
-    const reqData = [reqHeader, ...data.sections.requirements.map((r) => [r.id, r.description, r.priority, r.source])];
-    const reqSheet = XLSX.utils.aoa_to_sheet(reqData);
-    reqSheet["!cols"] = [{ wch: 12 }, { wch: 35 }, { wch: 10 }, { wch: 25 }];
-    XLSX.utils.book_append_sheet(workbook, reqSheet, "要件一覧");
-
-    // Sheet 3: Regulations with citations (法規要件)
-    const regHeader = ["法規コード", "説明", "ステータス", "引用元"];
-    const regData = [regHeader, ...data.sections.regulations.map((r) => [r.code, r.description, r.status, r.source])];
-    const regSheet = XLSX.utils.aoa_to_sheet(regData);
-    regSheet["!cols"] = [{ wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 25 }];
-    XLSX.utils.book_append_sheet(workbook, regSheet, "法規要件");
-
-    // Sheet 4: References (参考資料)
-    const refHeader = ["資料名", "種類"];
-    const refData = [refHeader, ...data.sections.references.map((r) => [r.name, r.type])];
-    const refSheet = XLSX.utils.aoa_to_sheet(refData);
-    refSheet["!cols"] = [{ wch: 40 }, { wch: 20 }];
-    XLSX.utils.book_append_sheet(workbook, refSheet, "参考資料");
+    // Adjust column widths roughly
+    overviewSheet["!cols"] = [{ wch: 30 }, { wch: 60 }];
+    XLSX.utils.book_append_sheet(workbook, overviewSheet, "設計構想書");
 
     // Generate filename and download
     const filename = `設計構想書_${data.componentName}_${data.generatedAt.replace(/\//g, "")}.xlsx`;
     XLSX.writeFile(workbook, filename);
 }
+
