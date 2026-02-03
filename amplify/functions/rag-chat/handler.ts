@@ -682,40 +682,59 @@ Your clear, helpful answer in Japanese here, with [x] citations included in the 
             }
         }
 
-        // Append the reference list (mapping [1] -> Source)
+        // Append the reference list (mapping [1] -> Source) - ONLY for citations actually used in the answer
         if (topChunks.length > 0) {
-            answerText += `\n\n---\n**参考資料:**\n`;
+            // Extract citation numbers actually used in the answer text
+            const citationMatches = answerText.matchAll(/\[(\d+)\]/g);
+            const usedCitations = new Set<number>();
 
-            // Create a map of unique sources with their first occurrence index
-            const sourceMap = new Map<string, number>();
+            for (const match of citationMatches) {
+                const citationNum = parseInt(match[1], 10);
+                usedCitations.add(citationNum);
+            }
 
-            topChunks.forEach((chunk, idx) => {
-                const sourceName = chunk.metadata.source || "Unknown";
-                const url = chunk.metadata.url;
+            // Only add reference section if citations were actually used
+            if (usedCitations.size > 0) {
+                answerText += `\n\n---\n**参考資料:**\n`;
 
-                // Extract filename only (remove path and extension)
-                let displayName = sourceName;
-                if (!url) {
-                    // For internal files, extract basename without extension
-                    const parts = sourceName.split('/');
-                    const basename = parts[parts.length - 1];
-                    // Remove extension
-                    const lastDotIndex = basename.lastIndexOf('.');
-                    displayName = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
-                }
+                // Create a map of sources for each citation number
+                const sourceMap = new Map<number, string>();
 
-                const displaySource = url ? `${sourceName} (${url})` : displayName;
+                topChunks.forEach((chunk, idx) => {
+                    const citationNum = idx + 1;
 
-                // Only add if this source hasn't been seen before
-                if (!sourceMap.has(displaySource)) {
-                    sourceMap.set(displaySource, idx + 1);
-                }
-            });
+                    // Skip if this citation wasn't used in the answer
+                    if (!usedCitations.has(citationNum)) {
+                        return;
+                    }
 
-            // Display unique sources with their reference numbers
-            sourceMap.forEach((refNum, displaySource) => {
-                answerText += `[${refNum}] ${displaySource}\n`;
-            });
+                    const sourceName = chunk.metadata.source || "Unknown";
+                    const url = chunk.metadata.url;
+
+                    // Extract filename only (remove path and extension)
+                    let displayName = sourceName;
+                    if (!url) {
+                        // For internal files, extract basename without extension
+                        const parts = sourceName.split('/');
+                        const basename = parts[parts.length - 1];
+                        // Remove extension
+                        const lastDotIndex = basename.lastIndexOf('.');
+                        displayName = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
+                    }
+
+                    const displaySource = url ? `${sourceName} (${url})` : displayName;
+                    sourceMap.set(citationNum, displaySource);
+                });
+
+                // Display sources in order of their citation numbers
+                const sortedCitations = Array.from(usedCitations).sort((a, b) => a - b);
+                sortedCitations.forEach(citationNum => {
+                    const displaySource = sourceMap.get(citationNum);
+                    if (displaySource) {
+                        answerText += `[${citationNum}] ${displaySource}\n`;
+                    }
+                });
+            }
         }
 
     } catch (error: any) {
