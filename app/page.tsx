@@ -347,10 +347,20 @@ export default function Dashboard() {
       const allUploadedDocs = Object.values(uploadedFiles).flat().map(f => f.path);
 
       const prompt = `
-Generate a design concept data for component "${selectedComponent}" based on the provided documents.
-The output must follow the structure of "Template_DesignConceptDocument251118" which consists of 8 specific sections.
-If the provided documents are insufficient, you may search the internet for the latest regulations or trends.
+You are the Chief Engineer at a major automotive manufacturer.
+Your task is to generate a "Design Concept Document" for the component "${selectedComponent}" based on the provided documents.
+The target audience is expert engineers and management.
 
+<instructions>
+1. **Persona & Tone**: Use professional, precise automotive engineering terminology. somewhat reduce ambiguity (e.g., instead of "good strength", use "high tensile strength 980MPa class").
+2. **Chain of Thought (CoT)**: Before generating the JSON, you MUST think step-by-step in <thinking> tags to analyze the documents, identify trade-offs, and structure your arguments. This thinking process will ensure logical consistency.
+3. **Structure**: Output strictly follows the JSON format below.
+4. **Benchmarks**: When writing the "benchmark" section, EXPLICITLY compare "Competitor Specs" vs "Our Target". Highlight where we win or lose.
+5. **Risks (FMEA Perspective)**: For "risksAndCountermeasures", adopt an FMEA (Failure Mode and Effects Analysis) mindset. Identify specific "Failure Modes" (e.g., "Crack due to thermal cycling") and "Design Countermeasures" (e.g., "Change material to SUS304"). Do not just say "Test it".
+6. **External Info**: If internal documents are insufficient, you may search the web for latest regulations (UN-R, FMVSS) or market trends.
+</instructions>
+
+<format>
 Strictly return valid JSON only. No strings before or after the JSON.
 The JSON must match this structure:
 {
@@ -365,12 +375,22 @@ The JSON must match this structure:
     "mainSpecifications": [ { "item": "Specification Item", "spec": "Value/Description" } ],
     "basicStructure": "6. 基本構造 (Basic Structure) ...",
     "adoptedTechnologies": "7. 採用技術 (Adopted Technologies) ...",
-    "risksAndCountermeasures": [ { "risk": "Risk Description", "countermeasure": "Countermeasure" } ],
+    "risksAndCountermeasures": [ { "risk": "Failure Mode / Risk", "countermeasure": "Design Countermeasure" } ],
     "references": [ { "name": "Ref Name", "type": "File" } ]
   }
 }
-If specific data is not found, infer reasonable engineering defaults or state "Not specified" but maintain the JSON structure.
+</format>
+
+<thinking_example>
+(Internal thought process - do not output in JSON strings, but use this logic)
+- Analyze input: "Rear Door" component.
+- Objective: Lightweighting is key.
+- Benchmark: Competitor A uses Aluminum. We use Steel. We lose on weight, win on cost.
+- FMEA: Risk = Water leakage at seal. Countermeasure = Add secondary seal lip.
+</thinking_example>
+
 IMPORTANT: Use [x] citations in the text fields to indicate the source.
+If specific data is not found, infer reasonable engineering defaults based on the component type but state "Not specified" clearly.
       `;
 
       let response;
