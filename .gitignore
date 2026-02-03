@@ -43,3 +43,18 @@ next-env.d.ts
 # amplify
 amplify_outputs.json
 .amplify/
+
+# Build logs
+build_log_*.txt
+
+# Lambda logs (export files)
+lambda-logs*.json
+
+# Log reference files
+log_url_*.txt
+
+# Amplify auto-generated
+functions.json
+
+# Work files
+*.xlsx
