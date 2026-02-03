@@ -15,7 +15,7 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
     // Fixed window behavior
 
     const [messages, setMessages] = useState<{ role: "user" | "bot"; content: string; citations?: string[] }[]>([
-        { role: "bot", content: "こんにちは。設計構想書に関する質問があればどうぞ。\n\nアップロードされた資料や生成結果についてはもちろん、一般的な設計知識についても質問できます。" },
+        { role: "bot", content: "こんにちは。私は車の設計に詳しい設計アシスタントです。\n\n設計構想書に関する質問や、自動車の設計・開発・法規に関することなど、お気軽にお聞きください。アップロードされた資料に基づく回答はもちろん、一般的な設計知識や最新の業界情報についてもお答えできます。" },
     ]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -139,7 +139,7 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
         if (uploadedCount > 0) {
             setMessages([{
                 role: "bot",
-                content: `こんにちは。${uploadedCount}件の資料がアップロードされています。\n\nアップロードされた資料や生成結果についてはもちろん、一般的な設計知識についても質問できます。`
+                content: `こんにちは。私は車の設計に詳しい設計アシスタントです。\n\n${uploadedCount}件の資料がアップロードされています。設計構想書に関する質問や、自動車の設計・開発・法規に関することなど、お気軽にお聞きください。`
             }]);
         }
     }, [uploadedFiles]);
@@ -234,7 +234,7 @@ export default function Chatbot({ uploadedFiles, selectedComponent, generatedDat
                 <div className="flex items-center gap-2">
                     <div className="flex flex-col items-start">
                         <h3 className="text-white font-semibold">設計アシスタント</h3>
-                        <p className="text-xs text-sky-50">設計に関する質問にお答えします</p>
+                        <p className="text-xs text-sky-50">車の設計に詳しいエンジニア</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
