@@ -339,21 +339,90 @@ function keywordBasedSort(query: string, chunks: Chunk[]): Chunk[] {
 }
 
 /**
+ * Determine Search Depth (Hybrid: Keyword + LLM)
+ * Returns "basic" (1 credit) or "advanced" (2 credits)
+ */
+async function determineSearchDepth(query: string): Promise<"basic" | "advanced"> {
+    // Step 1: Keyword-based check (Fast & Free)
+    const highPriorityKeywords = [
+        // Regulatory and safety
+        "法規", "規制", "基準", "法令", "法律",
+        "regulation", "standard", "requirement", "compliance",
+        "safety", "安全基準", "保安基準", "認証", "certification",
+        "歩行者保護", "pedestrian protection",
+        // Critical business
+        "株価", "stock", "acquisition", "買収", "merger"
+    ];
+
+    const queryLower = query.toLowerCase();
+    const hasHighPriorityKeyword = highPriorityKeywords.some(kw => queryLower.includes(kw));
+
+    if (hasHighPriorityKeyword) {
+        console.log("High-priority keyword detected. Using advanced search.");
+        return "advanced";
+    }
+
+    // Step 2: LLM-based judgment (Claude Haiku - Fast & Cheap)
+    const prompt = `Query: "${query}"
+
+Determine if this query requires ADVANCED web search (deeper, more comprehensive) or BASIC search is sufficient.
+
+Use ADVANCED if:
+- Complex query requiring multiple authoritative sources
+- Time-sensitive or breaking news
+- Requires deep technical/regulatory information
+
+Use BASIC if:
+- Simple factual lookup
+- General information query
+- Definition or concept explanation
+
+Output JSON ONLY: {"depth": "basic" or "advanced", "reasoning": "brief explanation"}`;
+
+    const payload = {
+        modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 50,
+            system: "You are a JSON-only API.",
+            messages: [{ role: "user", content: prompt }]
+        })
+    };
+
+    try {
+        const command = new InvokeModelCommand(payload);
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const jsonMatch = responseBody.content[0].text.match(/\{[\s\S]*\}/);
+
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]);
+            console.log(`LLM Search Depth Decision: ${result.depth} (${result.reasoning})`);
+            return result.depth === "advanced" ? "advanced" : "basic";
+        }
+    } catch (e) {
+        console.warn("Search depth determination failed, defaulting to basic:", e);
+    }
+
+    // Fallback to basic (safer for cost)
+    return "basic";
+}
+
+/**
  * Tavily API for Web Search
  */
-async function searchWeb(query: string): Promise<Chunk[]> {
+async function searchWeb(query: string, forcedDepth?: "basic" | "advanced"): Promise<Chunk[]> {
     const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey) {
         console.warn("TAVILY_API_KEY is not set. Skipping web search.");
         return [];
     }
 
-    // Simple heuristic: Only search if query implies outside knowledge or explicitly asks for it
-    // But for now, let's search if the query is reasonably long or contains "latest"/"2025" etc.
-    const needsSearch = query.length > 2; // Reduced from 5 to allow shorter queries
-    if (!needsSearch) return [];
-
-    console.log(`Executing Web Search for: ${query}`);
+    // Determine search depth (use forced if provided, otherwise determine dynamically)
+    const searchDepth = forcedDepth || await determineSearchDepth(query);
+    console.log(`Executing Web Search for: ${query} (depth: ${searchDepth})`);
 
     try {
         const response = await fetch("https://api.tavily.com/search", {
@@ -364,7 +433,7 @@ async function searchWeb(query: string): Promise<Chunk[]> {
             body: JSON.stringify({
                 api_key: apiKey,
                 query: query,
-                search_depth: "advanced",
+                search_depth: searchDepth, // Dynamic depth selection
                 include_answer: true,
                 max_results: 5,
                 exclude_domains: [
@@ -626,17 +695,16 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
         // --- Fallback Mechanism: Score Check ---
         const topScore = rankedChunks.length > 0 ? (rankedChunks[0].metadata.score || 0) : 0;
-        // Threshold: 6.0 (AI "Context" is 6-8, so trigger if below "good context" level)
-        // More aggressive: trigger web search for medium relevance too
-        const isRelevanceLow = topScore < 6.0;
+        // Threshold: 7.0 (optimized to trust internal docs with moderate relevance)
+        const isRelevanceLow = topScore < 7.0;
 
         if (!performWebSearch && isRelevanceLow) {
             console.log(`Low/Medium relevance (Top Score: ${topScore}). Triggering Fallback Web Search.`);
             answerText += "内部資料では十分な情報が見つかりませんでした。Webで追加情報を検索しています...\n\n";
 
             try {
-                // Use the original query for web search often works better than enriched for general topics
-                const fallbackChunks = await searchWeb(searchTargetQuery);
+                // Use advanced search for fallback (higher quality needed)
+                const fallbackChunks = await searchWeb(searchTargetQuery, "advanced");
                 if (fallbackChunks.length > 0) {
                     // Update citations
                     citations.push(...fallbackChunks.map(c => c.metadata.source).filter((v, i, a) => a.indexOf(v) === i));
