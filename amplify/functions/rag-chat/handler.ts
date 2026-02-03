@@ -585,12 +585,46 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
         const TOP_K = Math.min(10, Math.max(5, queryComplexity * 2));
         const topChunks = rankedChunks.slice(0, TOP_K);
 
+        // Create a mapping of unique sources to citation numbers
+        const sourceToNumberMap = new Map<string, number>();
+        let citationCounter = 1;
+
+        topChunks.forEach((chunk) => {
+            const sourceName = chunk.metadata.source || "Unknown";
+
+            // Extract the base filename without extension for internal docs
+            let baseSource = sourceName;
+            if (!chunk.metadata.url) {
+                const parts = sourceName.split('/');
+                const basename = parts[parts.length - 1];
+                const lastDotIndex = basename.lastIndexOf('.');
+                baseSource = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
+            }
+
+            // Assign a unique number to each unique source
+            if (!sourceToNumberMap.has(baseSource)) {
+                sourceToNumberMap.set(baseSource, citationCounter);
+                citationCounter++;
+            }
+        });
+
         let context = "";
-        topChunks.forEach((chunk, idx) => {
-            const source = chunk.metadata.source || "Unknown";
+        topChunks.forEach((chunk) => {
+            const sourceName = chunk.metadata.source || "Unknown";
+
+            // Extract the base filename for lookup
+            let baseSource = sourceName;
+            if (!chunk.metadata.url) {
+                const parts = sourceName.split('/');
+                const basename = parts[parts.length - 1];
+                const lastDotIndex = basename.lastIndexOf('.');
+                baseSource = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
+            }
+
+            const citationNum = sourceToNumberMap.get(baseSource) || 0;
             const heading = chunk.metadata.heading || "";
             const scoreStr = chunk.metadata.score !== undefined ? ` [Score: ${chunk.metadata.score.toFixed(2)}]` : "";
-            context += `[${idx + 1}] (${source})${heading ? ` - ${heading}` : ""}${scoreStr}\n${chunk.text.trim()}\n\n`;
+            context += `[${citationNum}] (${sourceName})${heading ? ` - ${heading}` : ""}${scoreStr}\n${chunk.text.trim()}\n\n`;
         });
 
         // --- 5. Generate Answer (Improved System Prompt) ---
@@ -697,39 +731,39 @@ Your clear, helpful answer in Japanese here, with [x] citations included in the 
             if (usedCitations.size > 0) {
                 answerText += `\n\n---\n**参考資料:**\n`;
 
-                // Create a map of sources for each citation number
-                const sourceMap = new Map<number, string>();
+                // Create a reverse map: citation number -> source display name
+                const citationToSourceMap = new Map<number, string>();
 
-                topChunks.forEach((chunk, idx) => {
-                    const citationNum = idx + 1;
-
-                    // Skip if this citation wasn't used in the answer
-                    if (!usedCitations.has(citationNum)) {
-                        return;
-                    }
-
+                topChunks.forEach((chunk) => {
                     const sourceName = chunk.metadata.source || "Unknown";
                     const url = chunk.metadata.url;
 
-                    // Extract filename only (remove path and extension)
+                    // Extract base filename for internal docs
+                    let baseSource = sourceName;
                     let displayName = sourceName;
+
                     if (!url) {
-                        // For internal files, extract basename without extension
                         const parts = sourceName.split('/');
                         const basename = parts[parts.length - 1];
-                        // Remove extension
                         const lastDotIndex = basename.lastIndexOf('.');
-                        displayName = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
+                        baseSource = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
+                        displayName = baseSource;
                     }
 
-                    const displaySource = url ? `${sourceName} (${url})` : displayName;
-                    sourceMap.set(citationNum, displaySource);
+                    const citationNum = sourceToNumberMap.get(baseSource);
+                    if (citationNum && usedCitations.has(citationNum)) {
+                        const displaySource = url ? `${sourceName} (${url})` : displayName;
+                        // Only add if not already added (avoid duplicates)
+                        if (!citationToSourceMap.has(citationNum)) {
+                            citationToSourceMap.set(citationNum, displaySource);
+                        }
+                    }
                 });
 
                 // Display sources in order of their citation numbers
-                const sortedCitations = Array.from(usedCitations).sort((a, b) => a - b);
+                const sortedCitations = Array.from(citationToSourceMap.keys()).sort((a, b) => a - b);
                 sortedCitations.forEach(citationNum => {
-                    const displaySource = sourceMap.get(citationNum);
+                    const displaySource = citationToSourceMap.get(citationNum);
                     if (displaySource) {
                         answerText += `[${citationNum}] ${displaySource}\n`;
                     }
