@@ -317,7 +317,9 @@ async function searchWeb(query: string): Promise<Chunk[]> {
         });
 
         if (!response.ok) {
-            throw new Error(`Tavily API error: ${response.statusText}`);
+            const errorBody = await response.text();
+            console.error(`Tavily API Error Response (${response.status}):`, errorBody);
+            throw new Error(`Tavily API error (${response.status}): ${response.statusText} - ${errorBody}`);
         }
 
         const data = await response.json();
@@ -715,6 +717,9 @@ Your clear, helpful answer in Japanese here, with [x] citations included in the 
                 answerText += `\n\n回答の生成中にエラーが発生しました: ${e.message}\n`;
             }
         }
+
+        // Remove <thinking> tags from the response (internal LLM reasoning should not be shown to users)
+        answerText = answerText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
 
         // Append the reference list (mapping [1] -> Source) - ONLY for citations actually used in the answer
         if (topChunks.length > 0) {
