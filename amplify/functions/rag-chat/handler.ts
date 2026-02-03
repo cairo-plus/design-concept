@@ -151,6 +151,11 @@ async function shouldTriggerWebSearch(query: string): Promise<boolean> {
         "news", "trend", "latest", "最新",
         "2025", "2026", "future", "将来",
         "competitor", "market", "市場",
+        // Regulatory and legal keywords
+        "法規", "規制", "ルール", "法令", "法律", "基準",
+        "regulation", "standard", "requirement", "compliance",
+        "safety", "安全基準", "保安基準", "認証",
+        "歩行者保護", "pedestrian protection",
         // Explicit requests for external info
         "internet", "web", "google", "online",
         "ネット", "インターネット", "ウェブ", "検索して", "調べて"
@@ -549,13 +554,13 @@ export const handler = async (event: ChatEvent): Promise<ChatResponse> => {
 
         // --- Fallback Mechanism: Score Check ---
         const topScore = rankedChunks.length > 0 ? (rankedChunks[0].metadata.score || 0) : 0;
-        // Threshold: 5.0 (AI "Context" is 6-8, "Term Match" is 3-5. Local sort: Heading is 5.0)
-        // If the best match is weak, try Web Search if we haven't already
-        const isRelevanceLow = topScore < 5.0;
+        // Threshold: 6.0 (AI "Context" is 6-8, so trigger if below "good context" level)
+        // More aggressive: trigger web search for medium relevance too
+        const isRelevanceLow = topScore < 6.0;
 
         if (!performWebSearch && isRelevanceLow) {
-            console.log(`Low relevance (Top Score: ${topScore}). Triggering Fallback Web Search.`);
-            answerText += "Internal documents may not be sufficient. Checking the web...\n\n";
+            console.log(`Low/Medium relevance (Top Score: ${topScore}). Triggering Fallback Web Search.`);
+            answerText += "内部資料では十分な情報が見つかりませんでした。Webで追加情報を検索しています...\n\n";
 
             try {
                 // Use the original query for web search often works better than enriched for general topics
@@ -681,19 +686,35 @@ Your clear, helpful answer in Japanese here, with [x] citations included in the 
         if (topChunks.length > 0) {
             answerText += `\n\n---\n**参考資料:**\n`;
 
-            // Deduplicate sources but keep their indices
-            const uniqueSources: string[] = [];
-            // We want to list all context items available so the user knows what [1] refers to.
-            // Or typically, we listing what was actually used is hard without parsing. 
-            // Better to list the Top K items provided as context.
+            // Create a map of unique sources with their first occurrence index
+            const sourceMap = new Map<string, number>();
 
             topChunks.forEach((chunk, idx) => {
                 const sourceName = chunk.metadata.source || "Unknown";
                 const url = chunk.metadata.url;
-                // If it's a web result, show URL
-                const displaySource = url ? `${sourceName} (${url})` : sourceName;
 
-                answerText += `[${idx + 1}] ${displaySource}\n`;
+                // Extract filename only (remove path and extension)
+                let displayName = sourceName;
+                if (!url) {
+                    // For internal files, extract basename without extension
+                    const parts = sourceName.split('/');
+                    const basename = parts[parts.length - 1];
+                    // Remove extension
+                    const lastDotIndex = basename.lastIndexOf('.');
+                    displayName = lastDotIndex !== -1 ? basename.substring(0, lastDotIndex) : basename;
+                }
+
+                const displaySource = url ? `${sourceName} (${url})` : displayName;
+
+                // Only add if this source hasn't been seen before
+                if (!sourceMap.has(displaySource)) {
+                    sourceMap.set(displaySource, idx + 1);
+                }
+            });
+
+            // Display unique sources with their reference numbers
+            sourceMap.forEach((refNum, displaySource) => {
+                answerText += `[${refNum}] ${displaySource}\n`;
             });
         }
 
