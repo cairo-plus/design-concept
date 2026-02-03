@@ -672,9 +672,7 @@ IMPORTANT: You MUST cite your sources using the reference numbers provided in th
 - Do not make up citations. Only use those provided in the context.
 
 Response Format:
-<answer>
 Your clear, helpful answer in Japanese here, with [x] citations included in the text...
-</answer>
 `
                 }
             ],
@@ -726,7 +724,7 @@ Your clear, helpful answer in Japanese here, with [x] citations included in the 
         }
 
         // Remove <thinking> tags from the response (internal LLM reasoning should not be shown to users)
-        answerText = answerText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+        answerText = answerText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').replace(/<\/?answer>/gi, '');
 
         // Append the reference list (mapping [1] -> Source) - ONLY for citations actually used in the answer
         if (topChunks.length > 0) {
